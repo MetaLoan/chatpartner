@@ -40,6 +40,11 @@ const routes = [
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),
   },
+  {
+    path: '/info-pool',
+    name: 'InfoPool',
+    component: () => import('@/views/InfoPool.vue'),
+  },
 ]
 
 const router = createRouter({

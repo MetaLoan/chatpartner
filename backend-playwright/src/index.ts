@@ -10,6 +10,9 @@ import { messageRoutes } from './routes/messages.js';
 import { authRoutes } from './routes/auth.js';
 import { configRoutes } from './routes/config.js';
 import { statisticsRoutes } from './routes/statistics.js';
+import { infoPoolRoutes } from './routes/info-pool.js';
+import { InfoPoolService } from './services/info-pool.js';
+import { ProactiveScheduler } from './services/proactive-scheduler.js';
 
 // 初始化
 const prisma = new PrismaClient();
@@ -24,9 +27,17 @@ app.use(express.json());
 // 创建 Telegram 管理器
 const telegramManager = new TelegramManager(prisma);
 
+// 创建信息池服务
+const infoPoolService = new InfoPoolService(prisma);
+
+// 创建主动发言调度器
+const proactiveScheduler = new ProactiveScheduler(prisma, infoPoolService);
+
 // 挂载到 app 上供路由使用
 app.set('prisma', prisma);
 app.set('telegramManager', telegramManager);
+app.set('infoPoolService', infoPoolService);
+app.set('proactiveScheduler', proactiveScheduler);
 app.set('wss', wss);
 
 // WebSocket 连接处理
@@ -58,6 +69,9 @@ app.use('/api/v1/configs', configRoutes);
 // 统计路由
 app.use('/api/v1/statistics', statisticsRoutes);
 
+// 信息池路由 (v2.0)
+app.use('/api/v1/info-pool', infoPoolRoutes);
+
 // 健康检查
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', version: '1.0.0' });
@@ -74,11 +88,28 @@ server.listen(PORT, () => {
   
   // 启动所有已启用的账号
   telegramManager.startAll().catch(console.error);
+  
+  // 启动信息池服务
+  infoPoolService.startAll().catch(console.error);
+  
+  // 启动主动发言调度器（需要等待Telegram客户端启动后再注册）
+  setTimeout(() => {
+    // 为每个在线的客户端注册发送函数
+    const clients = telegramManager.getClients();
+    for (const [accountId, client] of clients) {
+      proactiveScheduler.registerSendFunction(accountId, async (msg) => {
+        await client.sendMessage(msg);
+      });
+    }
+    proactiveScheduler.startAll().catch(console.error);
+  }, 10000); // 等待10秒让Telegram客户端启动
 });
 
 // 优雅关闭
 process.on('SIGTERM', async () => {
   console.log('🛑 正在关闭服务器...');
+  proactiveScheduler.stopAll();
+  infoPoolService.stopAll();
   await telegramManager.stopAll();
   await prisma.$disconnect();
   server.close();

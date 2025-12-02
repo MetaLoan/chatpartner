@@ -34,6 +34,12 @@ function formatAccount(account: any) {
       title: account.targetGroup.title,
       telegram_id: account.targetGroup.telegramId
     } : null,
+    // 主动发言相关 (v2.0)
+    proactive_enabled: account.proactiveEnabled,
+    proactive_interval_min: account.proactiveIntervalMin,
+    proactive_interval_max: account.proactiveIntervalMax,
+    proactive_prompt: account.proactivePrompt,
+    last_proactive_at: account.lastProactiveAt,
     created_at: account.createdAt,
     updated_at: account.updatedAt
   };
@@ -188,6 +194,11 @@ accountRoutes.put('/:id', async (req: Request, res: Response) => {
     if (data.enabled !== undefined) updateData.enabled = data.enabled;
     if (data.enable_image_recognition !== undefined) updateData.enableImageRecognition = data.enable_image_recognition;
     if (data.target_group_id !== undefined) updateData.targetGroupId = data.target_group_id;
+    // 主动发言相关 (v2.0)
+    if (data.proactive_enabled !== undefined) updateData.proactiveEnabled = data.proactive_enabled;
+    if (data.proactive_interval_min !== undefined) updateData.proactiveIntervalMin = data.proactive_interval_min;
+    if (data.proactive_interval_max !== undefined) updateData.proactiveIntervalMax = data.proactive_interval_max;
+    if (data.proactive_prompt !== undefined) updateData.proactivePrompt = data.proactive_prompt;
 
     const account = await prisma.account.update({
       where: { id },
@@ -217,9 +228,8 @@ accountRoutes.delete('/:id', async (req: Request, res: Response) => {
     await manager.removeClient(id);
 
     // 删除相关数据
-    await prisma.authSession.deleteMany({ where: { accountId: id } });
-    await prisma.accountGroup.deleteMany({ where: { accountId: id } });
-    await prisma.message.deleteMany({ where: { accountId: id } });
+    await prisma.infoItemUsage.deleteMany({ where: { accountId: id } }).catch(() => {});
+    await prisma.message.deleteMany({ where: { accountId: id } }).catch(() => {});
     
     // 删除账号
     await prisma.account.delete({ where: { id } });

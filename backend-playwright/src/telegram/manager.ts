@@ -111,6 +111,13 @@ export class TelegramManager {
   }
 
   /**
+   * 获取所有客户端
+   */
+  getClients(): Map<number, TelegramClient> {
+    return this.clients;
+  }
+
+  /**
    * 获取所有客户端状态
    */
   getStatus(): { accountId: number; status: string }[] {

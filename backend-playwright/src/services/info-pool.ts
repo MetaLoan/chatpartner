@@ -1,0 +1,456 @@
+/**
+ * 公共信息池服务
+ * 负责管理、获取和分配公共信息池的内容
+ */
+
+import { PrismaClient } from '@prisma/client';
+
+// RSS解析器 - 简单实现，不依赖外部库
+async function parseRSS(url: string): Promise<Array<{
+  title: string;
+  content: string;
+  link: string;
+  pubDate: Date;
+  guid: string;
+}>> {
+  try {
+    const response = await fetch(url);
+    const xml = await response.text();
+    
+    const items: Array<{
+      title: string;
+      content: string;
+      link: string;
+      pubDate: Date;
+      guid: string;
+    }> = [];
+    
+    // 简单的XML解析
+    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+    let match;
+    
+    while ((match = itemRegex.exec(xml)) !== null) {
+      const itemXml = match[1];
+      
+      const getTagContent = (tag: string): string => {
+        // 处理CDATA
+        const cdataMatch = itemXml.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, 'i'));
+        if (cdataMatch) return cdataMatch[1].trim();
+        
+        const simpleMatch = itemXml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+        return simpleMatch ? simpleMatch[1].trim() : '';
+      };
+      
+      const title = getTagContent('title');
+      const description = getTagContent('description');
+      const contentEncoded = getTagContent('content:encoded');
+      const link = getTagContent('link');
+      const pubDateStr = getTagContent('pubDate');
+      const guid = getTagContent('guid') || link;
+      
+      items.push({
+        title,
+        content: contentEncoded || description,
+        link,
+        pubDate: pubDateStr ? new Date(pubDateStr) : new Date(),
+        guid
+      });
+    }
+    
+    return items;
+  } catch (error) {
+    console.error('RSS解析失败:', error);
+    return [];
+  }
+}
+
+// 获取加密货币价格
+async function fetchCryptoPrice(symbol: string): Promise<{
+  price: number;
+  change24h: number;
+} | null> {
+  try {
+    // 使用CoinGecko免费API
+    const ids: Record<string, string> = {
+      'BTC': 'bitcoin',
+      'ETH': 'ethereum'
+    };
+    
+    const id = ids[symbol.toUpperCase()];
+    if (!id) return null;
+    
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`
+    );
+    
+    const data = await response.json();
+    const coinData = data[id];
+    
+    if (!coinData) return null;
+    
+    return {
+      price: coinData.usd,
+      change24h: coinData.usd_24h_change || 0
+    };
+  } catch (error) {
+    console.error(`获取${symbol}价格失败:`, error);
+    return null;
+  }
+}
+
+export class InfoPoolService {
+  private prisma: PrismaClient;
+  private fetchIntervals: Map<number, NodeJS.Timeout> = new Map();
+  
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
+  
+  /**
+   * 启动所有信息源的自动拉取
+   */
+  async startAll(): Promise<void> {
+    const sources = await this.prisma.infoSource.findMany({
+      where: { enabled: true }
+    });
+    
+    console.log(`📡 启动 ${sources.length} 个信息源`);
+    
+    for (const source of sources) {
+      await this.startSource(source.id);
+    }
+  }
+  
+  /**
+   * 启动单个信息源
+   */
+  async startSource(sourceId: number): Promise<void> {
+    const source = await this.prisma.infoSource.findUnique({
+      where: { id: sourceId }
+    });
+    
+    if (!source || !source.enabled) return;
+    
+    // 清除旧的定时器
+    this.stopSource(sourceId);
+    
+    // 立即执行一次
+    await this.fetchSource(sourceId);
+    
+    // 设置定时拉取
+    const interval = setInterval(
+      () => this.fetchSource(sourceId),
+      source.fetchInterval * 1000
+    );
+    
+    this.fetchIntervals.set(sourceId, interval);
+    console.log(`📡 [${source.name}] 已启动，间隔 ${source.fetchInterval} 秒`);
+  }
+  
+  /**
+   * 停止单个信息源
+   */
+  stopSource(sourceId: number): void {
+    const interval = this.fetchIntervals.get(sourceId);
+    if (interval) {
+      clearInterval(interval);
+      this.fetchIntervals.delete(sourceId);
+    }
+  }
+  
+  /**
+   * 停止所有信息源
+   */
+  stopAll(): void {
+    for (const [sourceId] of this.fetchIntervals) {
+      this.stopSource(sourceId);
+    }
+  }
+  
+  /**
+   * 拉取单个信息源的数据
+   */
+  async fetchSource(sourceId: number): Promise<void> {
+    const source = await this.prisma.infoSource.findUnique({
+      where: { id: sourceId }
+    });
+    
+    if (!source) return;
+    
+    try {
+      switch (source.type) {
+        case 'rss':
+          await this.fetchRSS(source);
+          break;
+        case 'btc_price':
+          await this.fetchPrice(source, 'BTC');
+          break;
+        case 'eth_price':
+          await this.fetchPrice(source, 'ETH');
+          break;
+        // manual_text 和 manual_image 不需要自动拉取
+      }
+      
+      // 更新最后拉取时间
+      await this.prisma.infoSource.update({
+        where: { id: sourceId },
+        data: { lastFetchAt: new Date() }
+      });
+      
+    } catch (error) {
+      console.error(`[${source.name}] 拉取失败:`, error);
+    }
+  }
+  
+  /**
+   * 拉取RSS内容
+   */
+  private async fetchRSS(source: { id: number; name: string; rssUrl: string | null; expireHours: number }): Promise<void> {
+    if (!source.rssUrl) return;
+    
+    const items = await parseRSS(source.rssUrl);
+    console.log(`📰 [${source.name}] 获取到 ${items.length} 条RSS内容`);
+    
+    const expireTime = new Date();
+    expireTime.setHours(expireTime.getHours() - source.expireHours);
+    
+    let newCount = 0;
+    
+    for (const item of items) {
+      // 检查是否过期
+      if (item.pubDate < expireTime) continue;
+      
+      // 检查是否已存在
+      const existing = await this.prisma.infoItem.findUnique({
+        where: {
+          sourceId_externalId: {
+            sourceId: source.id,
+            externalId: item.guid
+          }
+        }
+      });
+      
+      if (existing) continue;
+      
+      // 创建新条目
+      await this.prisma.infoItem.create({
+        data: {
+          sourceId: source.id,
+          contentType: 'text',
+          title: item.title,
+          content: item.content,
+          sourceUrl: item.link,
+          externalId: item.guid,
+          publishedAt: item.pubDate
+        }
+      });
+      
+      newCount++;
+    }
+    
+    if (newCount > 0) {
+      console.log(`📰 [${source.name}] 新增 ${newCount} 条内容`);
+    }
+    
+    // 清理过期内容（保留已使用标记）
+    await this.cleanExpiredItems(source.id, source.expireHours);
+  }
+  
+  /**
+   * 拉取价格数据
+   */
+  private async fetchPrice(source: { id: number; name: string }, symbol: string): Promise<void> {
+    const priceData = await fetchCryptoPrice(symbol);
+    if (!priceData) return;
+    
+    const externalId = `${symbol}_${new Date().toISOString().slice(0, 13)}`; // 每小时一条
+    
+    // 检查是否已存在
+    const existing = await this.prisma.infoItem.findUnique({
+      where: {
+        sourceId_externalId: {
+          sourceId: source.id,
+          externalId
+        }
+      }
+    });
+    
+    if (existing) {
+      // 更新价格
+      await this.prisma.infoItem.update({
+        where: { id: existing.id },
+        data: {
+          priceValue: priceData.price,
+          priceChange: priceData.change24h
+        }
+      });
+    } else {
+      // 创建新条目
+      const changeEmoji = priceData.change24h >= 0 ? '📈' : '📉';
+      const changeStr = priceData.change24h >= 0 
+        ? `+${priceData.change24h.toFixed(2)}%` 
+        : `${priceData.change24h.toFixed(2)}%`;
+      
+      await this.prisma.infoItem.create({
+        data: {
+          sourceId: source.id,
+          contentType: 'price',
+          title: `${symbol} 实时价格`,
+          content: `${changeEmoji} ${symbol} 当前价格 $${priceData.price.toLocaleString()} (${changeStr})`,
+          externalId,
+          priceValue: priceData.price,
+          priceChange: priceData.change24h,
+          publishedAt: new Date()
+        }
+      });
+      
+      console.log(`💰 [${source.name}] ${symbol}: $${priceData.price.toLocaleString()} (${changeStr})`);
+    }
+  }
+  
+  /**
+   * 清理过期内容
+   */
+  private async cleanExpiredItems(sourceId: number, expireHours: number): Promise<void> {
+    if (expireHours <= 0) return;
+    
+    const expireTime = new Date();
+    expireTime.setHours(expireTime.getHours() - expireHours);
+    
+    // 标记过期但不删除（保留使用记录）
+    await this.prisma.infoItem.updateMany({
+      where: {
+        sourceId,
+        publishedAt: { lt: expireTime },
+        expired: false
+      },
+      data: { expired: true }
+    });
+  }
+  
+  /**
+   * 获取可用的信息条目（供AI账号使用）
+   */
+  async getAvailableItem(accountId: number, sourceTypes?: string[]): Promise<{
+    item: any;
+    source: any;
+  } | null> {
+    // 获取启用的信息源
+    const whereSource: any = { enabled: true };
+    if (sourceTypes && sourceTypes.length > 0) {
+      whereSource.type = { in: sourceTypes };
+    }
+    
+    const sources = await this.prisma.infoSource.findMany({
+      where: whereSource
+    });
+    
+    if (sources.length === 0) return null;
+    
+    // 随机选择一个信息源类型
+    const randomSource = sources[Math.floor(Math.random() * sources.length)];
+    
+    // 查找该信息源下可用的条目
+    const items = await this.prisma.infoItem.findMany({
+      where: {
+        sourceId: randomSource.id,
+        expired: false,
+        // 如果不可复用，排除已被任何账号使用的
+        ...(randomSource.reusable ? {} : {
+          usages: { none: {} }
+        }),
+        // 如果可复用，排除已被当前账号使用的
+        ...(randomSource.reusable ? {
+          usages: {
+            none: { accountId }
+          }
+        } : {})
+      },
+      orderBy: { publishedAt: 'desc' },
+      take: 10
+    });
+    
+    if (items.length === 0) return null;
+    
+    // 随机选择一条
+    const item = items[Math.floor(Math.random() * items.length)];
+    
+    return { item, source: randomSource };
+  }
+  
+  /**
+   * 标记信息已使用
+   */
+  async markItemUsed(itemId: number, accountId: number, sentContent?: string): Promise<void> {
+    await this.prisma.infoItemUsage.upsert({
+      where: {
+        itemId_accountId: { itemId, accountId }
+      },
+      create: {
+        itemId,
+        accountId,
+        sentContent
+      },
+      update: {
+        usedAt: new Date(),
+        sentContent
+      }
+    });
+  }
+  
+  /**
+   * 添加手动内容
+   */
+  async addManualItem(sourceId: number, data: {
+    title?: string;
+    content?: string;
+    imagePath?: string;
+  }): Promise<any> {
+    const source = await this.prisma.infoSource.findUnique({
+      where: { id: sourceId }
+    });
+    
+    if (!source) throw new Error('信息源不存在');
+    
+    const contentType = source.type === 'manual_image' ? 'image' : 'text';
+    
+    return this.prisma.infoItem.create({
+      data: {
+        sourceId,
+        contentType,
+        title: data.title,
+        content: data.content,
+        imagePath: data.imagePath,
+        publishedAt: new Date()
+      }
+    });
+  }
+  
+  /**
+   * 获取统计信息
+   */
+  async getStats(): Promise<{
+    totalSources: number;
+    enabledSources: number;
+    totalItems: number;
+    availableItems: number;
+    usedItems: number;
+  }> {
+    const [totalSources, enabledSources, totalItems, expiredItems, usedItemIds] = await Promise.all([
+      this.prisma.infoSource.count(),
+      this.prisma.infoSource.count({ where: { enabled: true } }),
+      this.prisma.infoItem.count(),
+      this.prisma.infoItem.count({ where: { expired: true } }),
+      this.prisma.infoItemUsage.findMany({ select: { itemId: true }, distinct: ['itemId'] })
+    ]);
+    
+    return {
+      totalSources,
+      enabledSources,
+      totalItems,
+      availableItems: totalItems - expiredItems,
+      usedItems: usedItemIds.length
+    };
+  }
+}
+

@@ -12,6 +12,7 @@
           <el-menu-item index="/dashboard">仪表盘</el-menu-item>
           <el-menu-item index="/accounts">账号管理</el-menu-item>
           <el-menu-item index="/groups">群组管理</el-menu-item>
+          <el-menu-item index="/info-pool">信息池</el-menu-item>
           <el-menu-item index="/messages">消息记录</el-menu-item>
           <el-menu-item index="/statistics">数据统计</el-menu-item>
           <el-menu-item index="/settings">系统设置</el-menu-item>

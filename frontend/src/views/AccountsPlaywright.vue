@@ -295,6 +295,31 @@
           <el-input-number v-model="form.multi_msg_interval" :min="1" :max="30" style="width: 100%" />
         </el-form-item>
 
+        <el-divider content-position="left">主动发言设置 (v2.0)</el-divider>
+
+        <el-form-item label="启用主动发言" prop="proactive_enabled">
+          <el-switch v-model="form.proactive_enabled" />
+          <div class="form-tip">开启后AI会从公共信息池获取内容主动发送到群里</div>
+        </el-form-item>
+
+        <el-form-item label="发言间隔(分钟)" v-if="form.proactive_enabled">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <el-input-number v-model="proactiveMinMinutes" :min="1" :max="1440" />
+            <span>~</span>
+            <el-input-number v-model="proactiveMaxMinutes" :min="1" :max="1440" />
+          </div>
+          <div class="form-tip">在此区间内随机选择下次发言时间</div>
+        </el-form-item>
+
+        <el-form-item label="主动发言提示词" prop="proactive_prompt" v-if="form.proactive_enabled">
+          <el-input
+            v-model="form.proactive_prompt"
+            type="textarea"
+            :rows="3"
+            placeholder="用于处理公共池信息时的AI提示词"
+          />
+        </el-form-item>
+
         <el-divider content-position="left">其他设置</el-divider>
 
         <el-form-item label="优先级" prop="priority">
@@ -314,7 +339,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getAccounts,
@@ -361,7 +386,22 @@ const form = reactive({
   split_by_newline: true,
   multi_msg_interval: 5,
   priority: 5,
-  enabled: true
+  enabled: true,
+  // 主动发言相关 (v2.0)
+  proactive_enabled: false,
+  proactive_interval_min: 300,
+  proactive_interval_max: 600,
+  proactive_prompt: '你需要根据以下信息，用自然、口语化的方式发表你的看法或评论。不要照搬原文，要有自己的观点。'
+})
+
+// 主动发言间隔（转换为分钟）
+const proactiveMinMinutes = computed({
+  get: () => Math.floor(form.proactive_interval_min / 60),
+  set: (val) => { form.proactive_interval_min = val * 60 }
+})
+const proactiveMaxMinutes = computed({
+  get: () => Math.floor(form.proactive_interval_max / 60),
+  set: (val) => { form.proactive_interval_max = val * 60 }
 })
 
 // 验证规则 - 不再需要 api_id 和 api_hash
@@ -469,7 +509,12 @@ const handleEdit = (row) => {
     split_by_newline: row.split_by_newline !== false,
     multi_msg_interval: row.multi_msg_interval || 5,
     priority: row.priority || 5,
-    enabled: row.enabled !== false
+    enabled: row.enabled !== false,
+    // 主动发言相关 (v2.0)
+    proactive_enabled: row.proactive_enabled || false,
+    proactive_interval_min: row.proactive_interval_min || 300,
+    proactive_interval_max: row.proactive_interval_max || 600,
+    proactive_prompt: row.proactive_prompt || '你需要根据以下信息，用自然、口语化的方式发表你的看法或评论。不要照搬原文，要有自己的观点。'
   })
   dialogVisible.value = true
 }
@@ -592,7 +637,12 @@ const resetForm = () => {
     split_by_newline: true,
     multi_msg_interval: 5,
     priority: 5,
-    enabled: true
+    enabled: true,
+    // 主动发言相关 (v2.0)
+    proactive_enabled: false,
+    proactive_interval_min: 300,
+    proactive_interval_max: 600,
+    proactive_prompt: '你需要根据以下信息，用自然、口语化的方式发表你的看法或评论。不要照搬原文，要有自己的观点。'
   })
   if (formRef.value) formRef.value.resetFields()
 }
