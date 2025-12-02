@@ -11,8 +11,10 @@ function formatGroup(group: any) {
     chat_id: group.telegramId, // 兼容旧字段名
     title: group.name,  // 数据库字段是 name
     name: group.name,
+    description: group.description,
     member_count: group.memberCount,
     is_active: group.isActive,
+    status: group.isActive ? 'active' : 'inactive', // 兼容前端期望的 status 字段
     created_at: group.createdAt,
     updated_at: group.updatedAt,
     accounts: group.accounts
@@ -137,16 +139,21 @@ groupRoutes.put('/:id', async (req: Request, res: Response) => {
   
   try {
     const id = parseInt(req.params.id);
-    const { telegram_id, chat_id, title, type, username } = req.body;
+    const { telegram_id, chat_id, title, status, description } = req.body;
     
     // 兼容 chat_id 和 telegram_id
     const groupId = telegram_id || chat_id?.toString();
+    
+    // 转换状态：'active' -> true, 其他 -> false
+    const isActive = status === 'active' || status === true;
 
     const group = await prisma.group.update({
       where: { id },
       data: {
         ...(groupId && { telegramId: groupId }),
-        ...(title && { name: title })
+        ...(title && { name: title }),
+        ...(description !== undefined && { description }),
+        ...(status !== undefined && { isActive })
       }
     });
 
@@ -155,6 +162,7 @@ groupRoutes.put('/:id', async (req: Request, res: Response) => {
       data: formatGroup(group)
     });
   } catch (error) {
+    console.error('更新群组失败:', error);
     res.status(500).json({ error: '更新失败' });
   }
 });
