@@ -81,20 +81,21 @@ groupRoutes.get('/:id/accounts', async (req: Request, res: Response) => {
   try {
     const groupId = parseInt(req.params.id);
     
-    const accountGroups = await prisma.accountGroup.findMany({
-      where: { groupId },
-      include: { account: true }
+    // 查找所有 targetGroupId 指向此群组的账号
+    const accounts = await prisma.account.findMany({
+      where: { targetGroupId: groupId }
     });
 
-    const accounts = accountGroups.map(ag => ({
-      id: ag.account.id,
-      phone_number: ag.account.phoneNumber,
-      nickname: ag.account.nickname,
-      status: ag.account.status
-    }));
-
-    res.json({ data: accounts });
+    res.json({ 
+      data: accounts.map(acc => ({
+        id: acc.id,
+        phone_number: acc.phoneNumber,
+        nickname: acc.nickname,
+        status: acc.status
+      }))
+    });
   } catch (error) {
+    console.error('获取群组账号失败:', error);
     res.status(500).json({ error: '查询失败' });
   }
 });
@@ -144,10 +145,8 @@ groupRoutes.put('/:id', async (req: Request, res: Response) => {
     const group = await prisma.group.update({
       where: { id },
       data: {
-        telegramId: groupId,
-        title,
-        type,
-        username
+        ...(groupId && { telegramId: groupId }),
+        ...(title && { name: title })
       }
     });
 
@@ -183,24 +182,23 @@ groupRoutes.post('/:id/assign-accounts', async (req: Request, res: Response) => 
   
   try {
     const groupId = parseInt(req.params.id);
-    const { account_ids, reply_probability } = req.body;
+    const { account_ids } = req.body;
 
     if (!Array.isArray(account_ids)) {
       return res.status(400).json({ error: 'account_ids 必须是数组' });
     }
 
-    // 删除现有关联
-    await prisma.accountGroup.deleteMany({ where: { groupId } });
+    // 先清除所有指向此群组的账号
+    await prisma.account.updateMany({
+      where: { targetGroupId: groupId },
+      data: { targetGroupId: null }
+    });
 
-    // 创建新关联
+    // 将选中的账号关联到此群组
     if (account_ids.length > 0) {
-      await prisma.accountGroup.createMany({
-        data: account_ids.map((accountId: number) => ({
-          accountId,
-          groupId,
-          replyProbability: reply_probability || 1.0,
-          enabled: true
-        }))
+      await prisma.account.updateMany({
+        where: { id: { in: account_ids } },
+        data: { targetGroupId: groupId }
       });
     }
 
