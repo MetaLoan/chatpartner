@@ -8,50 +8,6 @@ const TELEGRAM_WEB_URL = 'https://web.telegram.org/k/';
 const SESSION_DIR = process.env.SESSION_DIR || './data/sessions';
 
 /**
- * 全局AI消息追踪器 - 防止多个AI账号互相回复
- * 记录最近AI发送的消息内容的哈希值
- */
-class AIMessageTracker {
-  private static instance: AIMessageTracker;
-  private recentMessages: Set<string> = new Set();
-  private maxSize: number = 100;
-  
-  private constructor() {}
-  
-  static getInstance(): AIMessageTracker {
-    if (!AIMessageTracker.instance) {
-      AIMessageTracker.instance = new AIMessageTracker();
-    }
-    return AIMessageTracker.instance;
-  }
-  
-  // 计算消息哈希（取前50字符）
-  private hashMessage(content: string): string {
-    return content.trim().substring(0, 50).toLowerCase();
-  }
-  
-  // 记录AI发送的消息
-  recordSent(content: string): void {
-    const hash = this.hashMessage(content);
-    this.recentMessages.add(hash);
-    
-    // 限制大小
-    if (this.recentMessages.size > this.maxSize) {
-      const first = this.recentMessages.values().next().value;
-      this.recentMessages.delete(first);
-    }
-  }
-  
-  // 检查是否是其他AI账号发的消息
-  isFromOtherAI(content: string): boolean {
-    const hash = this.hashMessage(content);
-    return this.recentMessages.has(hash);
-  }
-}
-
-const aiMessageTracker = AIMessageTracker.getInstance();
-
-/**
  * Telegram Web 自动化客户端
  * 使用 Playwright 操作 Telegram Web 版
  */
@@ -439,16 +395,9 @@ export class TelegramClient {
     if (messages.length === 0) return;
 
     // 找到最新的非自身消息用于触发逻辑
-    // 同时排除其他AI账号发的消息（通过消息追踪器检查）
-    const latestIncoming = [...messages].reverse().find(msg => {
-      if (msg.fromSelf) return false;
-      // 检查是否是其他AI账号发的消息
-      if (aiMessageTracker.isFromOtherAI(msg.text)) return false;
-      return true;
-    });
-    
+    const latestIncoming = [...messages].reverse().find(msg => !msg.fromSelf);
     if (!latestIncoming) {
-      // 只有自己或其他AI发的消息，暂不处理
+      // 只有自己刚发的消息，暂不处理
       return;
     }
 
@@ -707,9 +656,6 @@ export class TelegramClient {
     if (!this.page) return;
 
     try {
-      // 记录到AI消息追踪器，防止其他AI账号回复
-      aiMessageTracker.recordSent(text);
-      
       // 找到消息输入框 - 适配 Telegram Web K 版本
       const inputBox = await this.page.$('.input-message-input, [contenteditable="true"].input-field-input');
       
@@ -718,7 +664,6 @@ export class TelegramClient {
         if (this.account.splitByNewline && text.includes('\n')) {
           const parts = text.split('\n').filter(p => p.trim());
           for (let i = 0; i < parts.length; i++) {
-            aiMessageTracker.recordSent(parts[i]); // 记录每一段
             await this.sendSingleMessage(inputBox, parts[i]);
             if (i < parts.length - 1) {
               await this.page.waitForTimeout(this.account.multiMsgInterval * 1000);
