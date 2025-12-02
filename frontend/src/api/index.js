@@ -22,6 +22,10 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
   (response) => {
+    // 对于 blob 类型的响应（如文件下载），返回完整的 response
+    if (response.config.responseType === 'blob') {
+      return response
+    }
     return response.data
   },
   (error) => {
