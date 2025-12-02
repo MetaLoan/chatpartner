@@ -253,12 +253,12 @@ const handleEdit = (row) => {
   dialogTitle.value = '编辑群组'
   editingId = row.id
   Object.assign(form, {
-    chat_id: row.chat_id,
-    title: row.title,
-    username: row.username,
-    type: row.type,
-    status: row.status,
-    language: row.language
+    chat_id: Number(row.chat_id) || 0,  // 确保是数字类型
+    title: row.title || row.name,
+    username: row.username || '',
+    type: row.type || 'group',
+    status: row.status || 'active',
+    language: row.language || ''
   })
   dialogVisible.value = true
 }
