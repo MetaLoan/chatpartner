@@ -132,6 +132,13 @@ echo SESSION_DIR=./data/sessions
 :: 安装后端依赖
 echo       安装后端依赖...
 cd /d "%INSTALL_DIR%\chatpartner\backend-playwright"
+
+:: 创建必要的数据目录
+if not exist "data" mkdir "data"
+if not exist "data\sessions" mkdir "data\sessions"
+if not exist "data\uploads" mkdir "data\uploads"
+if not exist "data\temp" mkdir "data\temp"
+
 call npm install --legacy-peer-deps 2>nul
 call npx prisma generate
 call npx prisma db push

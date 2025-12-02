@@ -7,13 +7,25 @@ import { TelegramManager } from './telegram/manager.js';
 import { accountRoutes } from './routes/accounts.js';
 import { groupRoutes } from './routes/groups.js';
 import { messageRoutes } from './routes/messages.js';
-import { authRoutes } from './routes/auth.js';
+// auth routes removed - login is now handled directly in browser
 import { configRoutes } from './routes/config.js';
 import { statisticsRoutes } from './routes/statistics.js';
 import { infoPoolRoutes } from './routes/info-pool.js';
 import { backupRoutes } from './routes/backup.js';
 import { InfoPoolService } from './services/info-pool.js';
 import { ProactiveScheduler } from './services/proactive-scheduler.js';
+import fs from 'fs';
+import path from 'path';
+
+// 确保必要的数据目录存在
+const dataDirs = ['data', 'data/sessions', 'data/uploads', 'data/temp'];
+for (const dir of dataDirs) {
+  const fullPath = path.join(process.cwd(), dir);
+  if (!fs.existsSync(fullPath)) {
+    fs.mkdirSync(fullPath, { recursive: true });
+    console.log(`📁 创建目录: ${dir}`);
+  }
+}
 
 // 初始化
 const prisma = new PrismaClient();
@@ -64,7 +76,7 @@ export function broadcast(data: object) {
 app.use('/api/v1/accounts', accountRoutes);
 app.use('/api/v1/groups', groupRoutes);
 app.use('/api/v1/messages', messageRoutes);
-app.use('/api/v1/auth', authRoutes);
+// auth routes removed - login is now handled directly in browser
 app.use('/api/v1/configs', configRoutes);
 
 // 统计路由

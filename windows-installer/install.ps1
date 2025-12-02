@@ -140,6 +140,13 @@ Write-Host "   ✅ 代码下载完成" -ForegroundColor Green
 Write-Host "📦 安装后端依赖..." -ForegroundColor Yellow
 Set-Location "$projectDir\backend-playwright"
 
+# 创建必要的数据目录
+New-Item -ItemType Directory -Force -Path "data" | Out-Null
+New-Item -ItemType Directory -Force -Path "data\sessions" | Out-Null
+New-Item -ItemType Directory -Force -Path "data\uploads" | Out-Null
+New-Item -ItemType Directory -Force -Path "data\temp" | Out-Null
+Write-Host "   ✅ 数据目录创建完成" -ForegroundColor Green
+
 # 创建 .env 文件
 $envContent = @"
 DATABASE_URL="postgresql://postgres:chatpartner123@localhost:5432/chatpartner"
