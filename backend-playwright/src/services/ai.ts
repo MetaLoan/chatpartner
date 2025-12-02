@@ -208,6 +208,10 @@ ${realtimeSection}
    * 根据模型获取 API base URL
    */
   private getBaseUrl(model: string): string {
+    // Perplexity - 支持联网搜索的AI
+    if (model.startsWith('llama-3.1-sonar') || model.startsWith('sonar')) {
+      return 'https://api.perplexity.ai';
+    }
     if (model.startsWith('deepseek')) {
       return 'https://api.deepseek.com';
     }
@@ -215,6 +219,17 @@ ${realtimeSection}
       return 'https://api.anthropic.com/v1';
     }
     return 'https://api.openai.com/v1';
+  }
+
+  /**
+   * 检查模型是否支持联网搜索
+   */
+  private isOnlineSearchModel(model: string): boolean {
+    // Perplexity 的 sonar 系列模型支持联网搜索
+    return model.startsWith('llama-3.1-sonar') || 
+           model.startsWith('sonar') ||
+           model.includes('online') ||
+           model.includes('search');
   }
 }
 
