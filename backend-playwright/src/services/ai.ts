@@ -64,8 +64,8 @@ function formatPrice(price: number): string {
  */
 async function getRealtimeContext(): Promise<string> {
   try {
-    // 要获取的币种列表
-    const symbols = ['BTC', 'ETH', 'SOL', 'BNB', 'DOGE', 'XRP', 'ZEC', 'HYPE', 'PIPPIN', 'ASTER'];
+    // 要获取的币种列表（移除ZEC避免AI反复提及）
+    const symbols = ['BTC', 'ETH', 'SOL', 'BNB', 'DOGE', 'XRP', 'HYPE', 'PIPPIN', 'ASTER'];
     
     // 并行获取所有价格
     const results = await Promise.all(
