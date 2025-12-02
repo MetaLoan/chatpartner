@@ -51,6 +51,13 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="allow_same_account_reuse" label="单号反复" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.allow_same_account_reuse ? 'warning' : 'info'" size="small">
+              {{ row.allow_same_account_reuse ? '是' : '否' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="item_count" label="内容数" width="80" />
         <el-table-column prop="fetch_interval" label="拉取间隔" width="100">
           <template #default="{ row }">
@@ -84,6 +91,9 @@
         </el-select>
         <el-button style="margin-left: 10px;" @click="handleAddManualText" v-if="hasManualTextSource">
           添加文字
+        </el-button>
+        <el-button @click="handleBatchAddText" v-if="hasManualTextSource" type="success">
+          批量添加文字
         </el-button>
         <el-button @click="handleAddManualImage" v-if="hasManualImageSource">
           添加图片
@@ -167,6 +177,10 @@
           <el-switch v-model="sourceForm.reusable" />
           <div class="form-tip">开启后，已使用的内容可被其他账号再次使用</div>
         </el-form-item>
+        <el-form-item label="单号反复">
+          <el-switch v-model="sourceForm.allow_same_account_reuse" />
+          <div class="form-tip">开启后，同一账号可反复使用同一条内容（无限循环）</div>
+        </el-form-item>
         <el-form-item label="拉取间隔" v-if="['rss', 'btc_price', 'eth_price'].includes(sourceForm.type)">
           <el-input-number v-model="sourceForm.fetch_interval" :min="60" :max="86400" />
           <span style="margin-left: 10px;">秒</span>
@@ -208,6 +222,39 @@
       <template #footer>
         <el-button @click="textDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSaveText">添加</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量添加文字对话框 -->
+    <el-dialog v-model="batchTextDialogVisible" title="批量添加文字内容" width="600px">
+      <el-form :model="batchTextForm" label-width="80px">
+        <el-form-item label="信息源">
+          <el-select v-model="batchTextForm.source_id" style="width: 100%">
+            <el-option 
+              v-for="s in sources.filter(s => s.type === 'manual_text')" 
+              :key="s.id" 
+              :label="s.name" 
+              :value="s.id" 
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="内容" required>
+          <el-input 
+            v-model="batchTextForm.content" 
+            type="textarea" 
+            :rows="10" 
+            placeholder="每行一条内容，支持批量添加多条文字"
+          />
+        </el-form-item>
+        <div class="form-tip" style="margin-left: 80px; color: #909399; font-size: 12px;">
+          提示：每行作为一条独立内容，空行会被忽略
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchTextDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSaveBatchText" :loading="batchTextLoading">
+          批量添加
+        </el-button>
       </template>
     </el-dialog>
 
@@ -296,6 +343,7 @@ const sourceForm = reactive({
   rss_url: '',
   work_mode: 'comment',
   reusable: false,
+  allow_same_account_reuse: false,
   fetch_interval: 300,
   expire_hours: 24,
   enabled: true
@@ -306,6 +354,14 @@ const textDialogVisible = ref(false)
 const textForm = reactive({
   source_id: null,
   title: '',
+  content: ''
+})
+
+// 批量文字对话框
+const batchTextDialogVisible = ref(false)
+const batchTextLoading = ref(false)
+const batchTextForm = reactive({
+  source_id: null,
   content: ''
 })
 
@@ -375,6 +431,7 @@ const handleAddSource = () => {
     rss_url: '',
     work_mode: 'comment',
     reusable: false,
+    allow_same_account_reuse: false,
     fetch_interval: 300,
     expire_hours: 24,
     enabled: true
@@ -391,6 +448,7 @@ const handleEditSource = (row) => {
     rss_url: row.rss_url || '',
     work_mode: row.work_mode,
     reusable: row.reusable,
+    allow_same_account_reuse: row.allow_same_account_reuse || false,
     fetch_interval: row.fetch_interval,
     expire_hours: row.expire_hours,
     enabled: row.enabled
@@ -511,6 +569,50 @@ const handleSaveText = async () => {
   } catch (error) {
     console.error('添加失败:', error)
     ElMessage.error('添加失败')
+  }
+}
+
+// 批量添加文字
+const handleBatchAddText = () => {
+  const manualTextSource = sources.value.find(s => s.type === 'manual_text')
+  if (!manualTextSource) {
+    ElMessage.warning('请先添加一个"手动文字"类型的信息源')
+    return
+  }
+  batchTextForm.source_id = manualTextSource.id
+  batchTextForm.content = ''
+  batchTextDialogVisible.value = true
+}
+
+const handleSaveBatchText = async () => {
+  if (!batchTextForm.source_id || !batchTextForm.content.trim()) {
+    ElMessage.warning('请填写内容')
+    return
+  }
+  
+  // 按行分割，过滤空行
+  const lines = batchTextForm.content.split('\n').filter(line => line.trim() !== '')
+  
+  if (lines.length === 0) {
+    ElMessage.warning('没有有效内容')
+    return
+  }
+  
+  batchTextLoading.value = true
+  try {
+    const res = await api.post('/info-pool/items/text/batch', {
+      source_id: batchTextForm.source_id,
+      items: lines
+    })
+    ElMessage.success(`批量添加完成！成功: ${res.success} 条，失败: ${res.failed} 条`)
+    batchTextDialogVisible.value = false
+    loadItems()
+    loadStats()
+  } catch (error) {
+    console.error('批量添加失败:', error)
+    ElMessage.error('批量添加失败')
+  } finally {
+    batchTextLoading.value = false
   }
 }
 

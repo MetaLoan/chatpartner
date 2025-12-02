@@ -64,6 +64,7 @@ router.get('/sources', async (req: Request, res: Response) => {
         fetch_interval: s.fetchInterval,
         work_mode: s.workMode,
         reusable: s.reusable,
+        allow_same_account_reuse: s.allowSameAccountReuse,
         expire_hours: s.expireHours,
         enabled: s.enabled,
         last_fetch_at: s.lastFetchAt,
@@ -83,7 +84,7 @@ router.post('/sources', async (req: Request, res: Response) => {
   const infoPoolService = req.app.get('infoPoolService') as InfoPoolService;
   
   try {
-    const { type, name, rss_url, price_api_url, fetch_interval, work_mode, reusable, expire_hours, enabled } = req.body;
+    const { type, name, rss_url, price_api_url, fetch_interval, work_mode, reusable, allow_same_account_reuse, expire_hours, enabled } = req.body;
     
     if (!type || !name) {
       return res.status(400).json({ error: '缺少必填字段' });
@@ -98,6 +99,7 @@ router.post('/sources', async (req: Request, res: Response) => {
         fetchInterval: fetch_interval || 300,
         workMode: work_mode || 'comment',
         reusable: reusable || false,
+        allowSameAccountReuse: allow_same_account_reuse || false,
         expireHours: expire_hours || 24,
         enabled: enabled !== false
       }
@@ -122,7 +124,7 @@ router.put('/sources/:id', async (req: Request, res: Response) => {
   
   try {
     const id = parseInt(req.params.id);
-    const { name, rss_url, price_api_url, fetch_interval, work_mode, reusable, expire_hours, enabled } = req.body;
+    const { name, rss_url, price_api_url, fetch_interval, work_mode, reusable, allow_same_account_reuse, expire_hours, enabled } = req.body;
     
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
@@ -131,6 +133,7 @@ router.put('/sources/:id', async (req: Request, res: Response) => {
     if (fetch_interval !== undefined) updateData.fetchInterval = fetch_interval;
     if (work_mode !== undefined) updateData.workMode = work_mode;
     if (reusable !== undefined) updateData.reusable = reusable;
+    if (allow_same_account_reuse !== undefined) updateData.allowSameAccountReuse = allow_same_account_reuse;
     if (expire_hours !== undefined) updateData.expireHours = expire_hours;
     if (enabled !== undefined) updateData.enabled = enabled;
     
@@ -289,6 +292,70 @@ router.post('/items/text', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('添加文字内容失败:', error);
     res.status(500).json({ error: '添加文字内容失败' });
+  }
+});
+
+// 批量添加手动内容（文字）
+router.post('/items/text/batch', async (req: Request, res: Response) => {
+  const prisma = req.app.get('prisma') as PrismaClient;
+  
+  try {
+    const { source_id, items } = req.body;
+    
+    // items 格式: [{ title?: string, content: string }, ...]
+    // 或者直接是字符串数组: ["内容1", "内容2", ...]
+    
+    if (!source_id || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: '缺少必填字段或格式错误' });
+    }
+    
+    // 验证信息源类型
+    const source = await prisma.infoSource.findUnique({
+      where: { id: source_id }
+    });
+    
+    if (!source || source.type !== 'manual_text') {
+      return res.status(400).json({ error: '信息源类型不匹配' });
+    }
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (const item of items) {
+      try {
+        // 支持字符串或对象格式
+        const content = typeof item === 'string' ? item : item.content;
+        const title = typeof item === 'string' ? undefined : item.title;
+        
+        if (!content || content.trim() === '') {
+          failCount++;
+          continue;
+        }
+        
+        await prisma.infoItem.create({
+          data: {
+            sourceId: source_id,
+            contentType: 'text',
+            title: title || undefined,
+            content: content.trim(),
+            publishedAt: new Date()
+          }
+        });
+        
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    
+    res.json({ 
+      message: `批量添加完成`, 
+      success: successCount, 
+      failed: failCount 
+    });
+  } catch (error) {
+    console.error('批量添加文字内容失败:', error);
+    res.status(500).json({ error: '批量添加文字内容失败' });
   }
 });
 

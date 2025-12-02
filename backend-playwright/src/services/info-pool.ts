@@ -383,8 +383,11 @@ export class InfoPoolService {
         expired: false
       };
       
-      if (source.reusable) {
-        // 可复用：只排除当前账号已使用的
+      // 如果允许同一账号反复引用，则不排除任何内容
+      if (source.allowSameAccountReuse) {
+        // 允许同一账号反复使用，不需要排除
+      } else if (source.reusable) {
+        // 可复用（不同账号可用）：只排除当前账号已使用的
         if (usedIds.length > 0) {
           whereItem.id = { notIn: usedIds };
         }
