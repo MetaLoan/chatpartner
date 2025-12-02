@@ -171,7 +171,7 @@ const handleFileChange = async (file) => {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     
-    previewData.value = response.data.data
+    previewData.value = response.data
     previewDialogVisible.value = true
   } catch (error) {
     console.error('预览失败:', error)
@@ -194,7 +194,7 @@ const confirmImport = async () => {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     
-    ElMessage.success(`导入成功！账号: ${response.data.data.accounts}, 群组: ${response.data.data.groups}`)
+    ElMessage.success(`导入成功！账号: ${response.data.accounts}, 群组: ${response.data.groups}`)
     previewDialogVisible.value = false
     selectedFile.value = null
     
