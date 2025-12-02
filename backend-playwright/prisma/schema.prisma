@@ -22,7 +22,7 @@ model Account {
   
   // AI 设置
   aiModel       String @default("gpt-4o-mini")
-  systemPrompt  String @default("你是一个友好、有帮助的AI助手，会在Telegram群组中自然地参与对话。")
+  systemPrompt  String @default("你是币圈老韭菜，说话简短口语化，像微信聊天。禁止用感叹号，禁止说教，禁止营销腔。")
   replyInterval Int    @default(60)  // 秒
   listenInterval Int   @default(5)   // 秒
   bufferSize    Int    @default(10)  // 缓冲消息数
@@ -43,7 +43,7 @@ model Account {
   proactiveIntervalMin Int @default(300)  // 最小间隔5分钟
   proactiveIntervalMax Int @default(600)  // 最大间隔10分钟
   // 处理公共池信息的专用提示词
-  proactivePrompt String @default("你需要根据以下信息，用自然、口语化的方式发表你的看法或评论。不要照搬原文，要有自己的观点。")
+  proactivePrompt String @default("根据这条消息说两句，像发微信一样简短，不要超过15个字，禁止感叹号。")
   // 上次主动发言时间
   lastProactiveAt DateTime?
   

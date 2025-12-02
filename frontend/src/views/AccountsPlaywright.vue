@@ -179,7 +179,7 @@
             v-model="form.system_prompt"
             type="textarea"
             :rows="4"
-            placeholder="定义AI的说话风格和行为"
+            placeholder="例：你是币圈老韭菜，说话简短口语化，像微信聊天。禁止用感叹号，禁止说教。"
           />
         </el-form-item>
 
@@ -242,7 +242,7 @@
             v-model="form.proactive_prompt"
             type="textarea"
             :rows="3"
-            placeholder="用于处理公共池信息时的AI提示词"
+            placeholder="例：根据这条消息说两句，像发微信一样简短，不要超过15个字，禁止感叹号。"
           />
         </el-form-item>
 
