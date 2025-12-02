@@ -1,0 +1,130 @@
+// Prisma Schema - Telegram AI 群营销工具 (Playwright 版)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// AI 账号模型 - 不再需要 API ID 和 API Hash
+model Account {
+  id              Int       @id @default(autoincrement())
+  phoneNumber     String    @unique @map("phone_number")
+  nickname        String?
+  status          String    @default("offline") // online/offline/error/authenticating
+  
+  // 浏览器会话相关
+  sessionPath     String?   @map("session_path") // 浏览器 context 存储路径
+  lastLoginAt     DateTime? @map("last_login_at")
+  
+  // AI 配置
+  aiApiKey        String    @map("ai_api_key")
+  aiApiBaseUrl    String?   @map("ai_api_base_url") // 支持自定义 API 地址
+  aiModel         String    @default("gpt-4o-mini") @map("ai_model")
+  systemPrompt    String?   @map("system_prompt") @db.Text
+  
+  // 发言控制
+  replyInterval   Int       @default(60) @map("reply_interval") // 发言间隔（秒）
+  listenInterval  Int       @default(5) @map("listen_interval") // 监听处理间隔（秒）
+  bufferSize      Int       @default(10) @map("buffer_size") // 消息缓冲数量
+  autoReply       Boolean   @default(true) @map("auto_reply")
+  replyProbability Int      @default(100) @map("reply_probability") // 0-100
+  splitByNewline  Boolean   @default(true) @map("split_by_newline")
+  multiMsgInterval Int      @default(5) @map("multi_msg_interval")
+  enableImageRecognition Boolean @default(false) @map("enable_image_recognition") // 启用图片识别
+  
+  // 其他
+  priority        Int       @default(5)
+  tone            String?
+  enabled         Boolean   @default(true)
+  targetGroupId   Int?      @map("target_group_id") // 默认监控的群组ID
+  
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  
+  // 关联
+  groups          AccountGroup[]
+  messages        Message[]
+  targetGroup     Group?    @relation("AccountTargetGroup", fields: [targetGroupId], references: [id], onDelete: SetNull)
+  
+  @@map("ai_accounts")
+}
+
+// 群组模型
+model Group {
+  id          Int       @id @default(autoincrement())
+  telegramId  String    @unique @map("telegram_id") // Telegram 群组 ID 或链接
+  title       String
+  type        String    @default("group") // group/supergroup/channel
+  username    String?   // @群组用户名
+  memberCount Int?      @map("member_count")
+  
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // 关联
+  accounts        AccountGroup[]
+  messages        Message[]
+  targetedBy      Account[]       @relation("AccountTargetGroup") // 哪些账号将此群组作为目标
+  
+  @@map("groups")
+}
+
+// 账号-群组关联
+model AccountGroup {
+  id               Int     @id @default(autoincrement())
+  accountId        Int     @map("account_id")
+  groupId          Int     @map("group_id")
+  enabled          Boolean @default(true)
+  replyProbability Float   @default(1.0) @map("reply_probability") // 0-1
+  
+  account          Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  group            Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  @@unique([accountId, groupId])
+  @@map("account_groups")
+}
+
+// 消息记录
+model Message {
+  id                  Int      @id @default(autoincrement())
+  accountId           Int      @map("account_id")
+  groupId             Int      @map("group_id")
+  content             String   @db.Text
+  telegramMessageId   String?  @map("telegram_message_id")
+  replyToMessageId    String?  @map("reply_to_message_id")
+  
+  createdAt           DateTime @default(now()) @map("created_at")
+  
+  account             Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  group               Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  @@map("messages")
+}
+
+// 认证会话（用于登录验证码流程）
+model AuthSession {
+  id          Int      @id @default(autoincrement())
+  accountId   Int      @unique @map("account_id")
+  state       String   @default("none") // none/code_sent/code_required/password_required/authenticated
+  message     String?
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("auth_sessions")
+}
+
+// 全局配置
+model Config {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String @db.Text
+  
+  @@map("configs")
+}
+
+

@@ -1,0 +1,803 @@
+import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { PrismaClient, Account } from '@prisma/client';
+import path from 'path';
+import fs from 'fs';
+import { AIService } from '../services/ai.js';
+
+const TELEGRAM_WEB_URL = 'https://web.telegram.org/k/';
+const SESSION_DIR = process.env.SESSION_DIR || './data/sessions';
+
+/**
+ * Telegram Web 自动化客户端
+ * 使用 Playwright 操作 Telegram Web 版
+ */
+export class TelegramClient {
+  private account: Account;
+  private prisma: PrismaClient;
+  private browser: Browser | null = null;
+  private context: BrowserContext | null = null;
+  private page: Page | null = null;
+  private aiService: AIService;
+  private status: string = 'offline';
+  private isRunning: boolean = false;
+  private lastReplyTime: Map<string, Date> = new Map();
+  private lastSeenMessageId: string = ''; // 最后看到的消息标识
+
+  constructor(account: Account, prisma: PrismaClient) {
+    this.account = account;
+    this.prisma = prisma;
+    this.aiService = new AIService();
+  }
+
+  /**
+   * 获取会话存储路径（绝对路径）
+   */
+  private getSessionPath(): string {
+    const relativePath = path.join(SESSION_DIR, `${this.account.phoneNumber.replace(/\+/g, '')}.json`);
+    // 如果是相对路径，转换为绝对路径
+    if (path.isAbsolute(relativePath)) {
+      return relativePath;
+    }
+    return path.resolve(process.cwd(), relativePath);
+  }
+
+  /**
+   * 启动浏览器（非无头模式，让用户手动登录）
+   */
+  async start(): Promise<void> {
+    if (this.browser) {
+      this.log(`⚠️ 浏览器已存在 [账号: ${this.account.phoneNumber}]`);
+      return;
+    }
+
+    this.log(`🌐 启动浏览器 [账号: ${this.account.phoneNumber}]`);
+
+    // 优先使用数据库中保存的sessionPath，否则生成新的
+    let sessionPath = this.account.sessionPath || this.getSessionPath();
+    
+    // 确保是绝对路径
+    if (!path.isAbsolute(sessionPath)) {
+      sessionPath = path.resolve(process.cwd(), sessionPath);
+    }
+    
+    const hasSession = fs.existsSync(sessionPath);
+
+    if (hasSession) {
+      this.log(`   ✅ 找到会话文件: ${sessionPath}`);
+      this.log(`   → 将使用已保存的登录状态`);
+    } else {
+      this.log(`   ℹ️  未找到会话文件: ${sessionPath}`);
+      this.log(`   → 需要手动登录`);
+    }
+
+    // 确保会话目录存在
+    const sessionDir = path.dirname(sessionPath);
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    // 启动浏览器（非无头模式，让用户看到并操作）
+    this.browser = await chromium.launch({
+      headless: false, // 必须显示浏览器让用户登录
+      slowMo: 50,
+    });
+
+    // 创建上下文
+    this.context = await this.browser.newContext({
+      storageState: hasSession ? sessionPath : undefined,
+      viewport: { width: 1280, height: 800 },
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
+
+    this.page = await this.context.newPage();
+
+    // 导航到 Telegram Web
+    this.log(`📱 打开 Telegram Web...`);
+    await this.page.goto(TELEGRAM_WEB_URL, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 
+    });
+
+    await this.updateStatus('authenticating');
+    
+    // 启动后台登录监测任务
+    this.startLoginMonitoring(sessionPath, hasSession);
+  }
+
+  /**
+   * 持续监测登录状态并自动保存session
+   */
+  private async startLoginMonitoring(sessionPath: string, hadSession: boolean): Promise<void> {
+    if (hadSession) {
+      // 有session文件，快速检查是否登录
+      this.log(`   检查登录状态...`);
+      await this.page!.waitForTimeout(2000);
+      
+      const isLoggedIn = await this.checkLoginStatus();
+      if (isLoggedIn) {
+        this.log(`   ✅ 自动登录成功`);
+        this.status = 'online';
+        this.isRunning = true;
+        await this.updateStatus('online');
+        return; // 已登录，无需继续监测
+      } else {
+        this.log(`   ⚠️ Session失效，需要重新登录`);
+        // 删除失效的session文件
+        if (fs.existsSync(sessionPath)) {
+          fs.unlinkSync(sessionPath);
+          this.log(`   已删除失效的session文件`);
+        }
+      }
+    }
+    
+    // 开始持续监测（每10秒检查一次，最多监测10分钟）
+    this.log(`   🔄 开始持续监测登录状态（每10秒检查一次）...`);
+    this.log(`   💡 请在浏览器中完成登录（包括2FA密码）`);
+    
+    const maxAttempts = 60; // 60次，共10分钟
+    let attempt = 0;
+    
+    const checkInterval = setInterval(async () => {
+      attempt++;
+      
+      if (!this.page || this.status === 'online') {
+        clearInterval(checkInterval);
+        return;
+      }
+      
+      try {
+        const isLoggedIn = await this.checkLoginStatus();
+        if (isLoggedIn) {
+          this.log(`\n✅ 检测到登录成功！[${this.account.phoneNumber}]`);
+          clearInterval(checkInterval);
+          
+          // 等待Telegram完全加载
+          this.log(`   等待Telegram完全加载...`);
+          await this.page!.waitForTimeout(3000);
+          
+          // 保存session
+          try {
+            await this.context!.storageState({ path: sessionPath });
+            this.log(`💾 会话已保存到: ${sessionPath}`);
+          } catch (saveError) {
+            this.logError(`❌ 保存会话失败:`, saveError);
+          }
+          
+          // 更新数据库
+          await this.prisma.account.update({
+            where: { id: this.account.id },
+            data: {
+              status: 'online',
+              sessionPath: sessionPath,
+              lastLoginAt: new Date()
+            }
+          });
+          
+          this.status = 'online';
+          this.isRunning = true;
+          
+          this.log(`🎉 账号 ${this.account.phoneNumber} 已就绪！`);
+        } else if (attempt >= maxAttempts) {
+          this.log(`⏰ 登录监测超时（10分钟），请手动重启服务`);
+          clearInterval(checkInterval);
+        } else if (attempt % 6 === 0) {
+          // 每1分钟提醒一次
+          this.log(`   ⏳ [${this.account.phoneNumber}] 仍在等待登录... (${Math.floor(attempt/6)}分钟)`);
+        }
+      } catch (error) {
+        this.logError(`   ❌ 登录检测出错:`, error);
+      }
+    }, 10000); // 每10秒检查一次
+  }
+
+  /**
+   * 等待用户手动登录完成
+   */
+  async waitForLogin(timeoutMs: number = 300000): Promise<boolean> {
+    if (!this.page) {
+      throw new Error('浏览器未启动');
+    }
+
+    this.log(`⏳ 等待用户在浏览器中完成登录...`);
+    this.log(`   （超时时间: ${timeoutMs / 1000} 秒）`);
+
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeoutMs) {
+      const isLoggedIn = await this.checkLoginStatus();
+      if (isLoggedIn) {
+        this.log(`✅ 检测到登录成功！`);
+        
+        // 等待3秒让Telegram Web完全初始化并保存认证信息到localStorage
+        this.log(`   等待Telegram完全加载...`);
+        await this.page!.waitForTimeout(3000);
+        
+        // 保存会话
+        const sessionPath = this.getSessionPath();
+        await this.context!.storageState({ path: sessionPath });
+        this.log(`💾 会话已保存到: ${sessionPath}`);
+
+        // 更新数据库
+        await this.prisma.account.update({
+          where: { id: this.account.id },
+          data: {
+            status: 'online',
+            sessionPath: sessionPath,
+            lastLoginAt: new Date()
+          }
+        });
+
+        this.status = 'online';
+        this.isRunning = true;
+        return true;
+      }
+
+      // 每 2 秒检查一次
+      await this.page.waitForTimeout(2000);
+    }
+
+    this.log(`❌ 登录超时`);
+    return false;
+  }
+
+  /**
+   * 检查是否已登录
+   */
+  private async checkLoginStatus(): Promise<boolean> {
+    if (!this.page) return false;
+
+    try {
+      // 检查是否存在聊天列表（已登录的标志）
+      const chatList = await this.page.$('.chatlist-container, .chat-list, [class*="ChatList"], .folders-tabs');
+      return !!chatList;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 跳转到指定群组并开始监控
+   */
+  async navigateToGroupAndMonitor(groupTelegramId: string): Promise<void> {
+    if (!this.page) {
+      throw new Error('浏览器未启动');
+    }
+
+    // 等待登录完成（如果还没登录）
+    if (this.status === 'authenticating') {
+      this.log(`   等待账号登录完成...`);
+      
+      // 等待最多5分钟
+      const maxWait = 5 * 60 * 1000; // 5分钟
+      const startTime = Date.now();
+      
+      while (this.status === 'authenticating' && (Date.now() - startTime) < maxWait) {
+        await this.page.waitForTimeout(5000); // 每5秒检查一次
+      }
+      
+      if (this.status !== 'online') {
+        this.log(`   ⚠️ 账号未在5分钟内完成登录，跳过监控`);
+        return;
+      }
+      
+      this.log(`   ✅ 账号已登录，开始监控`);
+    }
+
+    // 构建群组 URL
+    const normalizedId = groupTelegramId.replace('-', '');
+    const groupUrl = `https://web.telegram.org/k/#-${normalizedId}`;
+    this.log(`🚀 跳转到群组: ${groupUrl}`);
+
+    await this.page.goto(groupUrl, { waitUntil: 'domcontentloaded' });
+    await this.page.waitForTimeout(3000); // 增加等待时间
+
+    // 校验是否成功跳转到目标群组
+    const currentUrl = this.page.url();
+    if (!currentUrl.includes(`#-${normalizedId}`)) {
+      this.log(`❌ 跳转失败，当前URL: ${currentUrl}`);
+      throw new Error(`无法跳转到群组 ${groupTelegramId}`);
+    }
+
+    this.log(`✅ 已进入目标群组`);
+    this.log(`👂 开始监控群组消息...`);
+    
+    // 确保状态正确
+    this.isRunning = true;
+    this.status = 'online';
+    
+    // 开始消息监听循环（异步执行，不阻塞）
+    this.startMessageLoop(normalizedId).catch((error) => {
+      this.logError(`❌ 监听循环异常退出:`, error);
+    });
+  }
+
+  /**
+   * 开始消息监听循环
+   */
+  private async startMessageLoop(groupId?: string): Promise<void> {
+    this.log(`⏰ 消息监听循环已启动 [监听间隔: ${this.account.listenInterval}秒]`);
+
+    const targetGroupUrl = groupId ? `#-${groupId.replace('-', '')}` : null;
+    let isActivelyMonitoring = true; // 是否正在积极监控
+    
+    this.log(`🔍 目标URL: ${targetGroupUrl}`);
+
+    while (this.isRunning && this.page) {
+      try {
+        // 校验当前URL是否是目标群组
+        if (targetGroupUrl) {
+          const currentUrl = this.page.url();
+          const isOnTargetPage = currentUrl.includes(targetGroupUrl);
+          
+          if (!isOnTargetPage) {
+            if (isActivelyMonitoring) {
+              // 刚切换离开目标页面
+              this.log(`⏸️ 检测到页面已切换，停止监听`);
+              this.log(`   期望: ${targetGroupUrl}`);
+              this.log(`   当前: ${currentUrl}`);
+              this.log(`   → 等待用户手动切换回目标群组页面...`);
+              isActivelyMonitoring = false;
+              await this.updateStatus('idle'); // 设置为空闲状态
+            }
+            // 不在目标页面，只是轮询检查URL，不处理消息
+            await this.page.waitForTimeout(5000); // 每5秒检查一次
+            continue;
+          } else if (!isActivelyMonitoring) {
+            // 回到目标页面了
+            this.log(`✅ 检测到已回到目标群组，重新开始监听`);
+            isActivelyMonitoring = true;
+            await this.updateStatus('online');
+          }
+        }
+
+        // 只有在目标页面时才处理消息
+        if (isActivelyMonitoring) {
+          await this.processCurrentChat(groupId);
+        }
+        
+      } catch (error) {
+        this.logError(`❌ 消息处理错误:`, error);
+        this.logError(error);
+      }
+
+      // 动态调整等待间隔：监听时用配置的间隔，等待时用5秒
+      const waitTime = isActivelyMonitoring ? this.account.listenInterval * 1000 : 5000;
+      await this.page.waitForTimeout(waitTime);
+    }
+
+    this.log(`🛑 消息监听循环已停止 [isRunning: ${this.isRunning}, page: ${!!this.page}]`);
+  }
+
+  /**
+   * 热更新：从数据库重新加载账号配置
+   */
+  private async reloadAccountConfig(): Promise<void> {
+    const updated = await this.prisma.account.findUnique({
+      where: { id: this.account.id }
+    });
+    if (updated) {
+      this.account = updated;
+    }
+  }
+
+  /**
+   * 处理当前聊天
+   * 逻辑：有新消息 → 检查间隔 → 概率判定 → 用最近N条消息作为上下文回复一条
+   */
+  private async processCurrentChat(groupId?: string): Promise<void> {
+    // 热更新：每次处理前重新加载配置
+    await this.reloadAccountConfig();
+    
+    if (!this.page || !this.account.autoReply) return;
+
+    const chatId = groupId || 'current';
+
+    // 读取最新消息（最近 bufferSize 条，不包括自己发的）
+    const messages = await this.readMessages();
+    if (messages.length === 0) return;
+
+    // 找到最新的非自身消息用于触发逻辑
+    const latestIncoming = [...messages].reverse().find(msg => !msg.fromSelf);
+    if (!latestIncoming) {
+      // 只有自己刚发的消息，暂不处理
+      return;
+    }
+
+    const latestMessageId = latestIncoming.messageId;
+    
+    // 检查是否有新消息
+    if (latestMessageId === this.lastSeenMessageId) {
+      // 没有新消息，静默等待
+      return;
+    }
+    
+    // 更新最后看到的消息
+    const previousMessageId = this.lastSeenMessageId;
+    this.lastSeenMessageId = latestMessageId;
+    
+    // 如果是第一次运行，只记录不回复
+    if (!previousMessageId) {
+      this.log(`📝 首次运行，已记录当前消息状态，等待新消息...`);
+      return;
+    }
+
+    // 显示检测到的新消息
+    const hasImages = latestIncoming.images && latestIncoming.images.length > 0;
+    const imageInfo = hasImages ? ` [📷 ${latestIncoming.images!.length}张图片]` : '';
+    const newMsgPreview = latestIncoming.text.length > 50 
+      ? latestIncoming.text.substring(0, 50) + '...' 
+      : latestIncoming.text;
+    this.log(`\n📨 轮询监测到新消息: "${newMsgPreview}"${imageInfo}`);
+
+    // 检查发言间隔
+    const lastReply = this.lastReplyTime.get(chatId);
+    if (lastReply) {
+      const elapsed = (Date.now() - lastReply.getTime()) / 1000;
+      if (elapsed < this.account.replyInterval) {
+        this.log(`⏳ 发言间隔未到 (${Math.round(elapsed)}/${this.account.replyInterval}秒)，跳过回复`);
+        return;
+      }
+    }
+
+    // 概率判断
+    const roll = Math.random() * 100;
+    if (roll > this.account.replyProbability) {
+      this.log(`🎲 概率判定: ${Math.round(roll)}% > ${this.account.replyProbability}%，跳过这条消息回复`);
+      return;
+    }
+    this.log(`🎲 概率判定: ${Math.round(roll)}% <= ${this.account.replyProbability}%，准备回复`);
+
+    // 生成 AI 回复（用最近的 bufferSize 条消息作为上下文）
+    const contextMessages = messages.slice(-this.account.bufferSize);
+    
+    // 统计图片数量
+    const totalImages = contextMessages.reduce((sum, msg) => 
+      sum + (msg.images?.length || 0), 0
+    );
+    
+    // 检查是否有图片且启用了图片识别
+    const contextHasImages = totalImages > 0;
+    const shouldProcessImages = contextHasImages && this.account.enableImageRecognition;
+    
+    if (hasImages && !shouldProcessImages) {
+      this.log(`📝 正在总结最近 ${contextMessages.length} 条消息的内容... (${totalImages}张图片未启用识别)`);
+    } else if (shouldProcessImages) {
+      this.log(`📝 正在总结最近 ${contextMessages.length} 条消息的内容... (包含${totalImages}张图片)`);
+    } else {
+      this.log(`📝 正在总结最近 ${contextMessages.length} 条消息的内容...`);
+    }
+    
+    try {
+      const reply = await this.aiService.generateReply(
+        this.account.aiApiKey,
+        this.account.aiModel,
+        this.account.systemPrompt || '',
+        contextMessages,
+        this.account.aiApiBaseUrl,
+        shouldProcessImages
+      );
+
+      if (reply) {
+        const replyPreview = reply.length > 80 ? reply.substring(0, 80) + '...' : reply;
+        this.log(`🤖 AI回复内容: "${replyPreview}"`);
+        await this.sendMessage(reply);
+        this.log(`✅ 发送成功!\n`);
+
+        // 更新最后回复时间
+        this.lastReplyTime.set(chatId, new Date());
+
+        // 保存消息记录
+        if (groupId) {
+          const group = await this.prisma.group.findUnique({ 
+            where: { telegramId: groupId } 
+          });
+          if (group) {
+            await this.prisma.message.create({
+              data: {
+                accountId: this.account.id,
+                groupId: group.id,
+                content: reply
+              }
+            });
+          }
+        }
+      }
+    } catch (error) {
+      this.logError(`❌ AI 回复失败:`, error);
+    }
+  }
+
+  /**
+   * 读取当前聊天的消息（不包括自己发的）
+   * 返回格式：{ text: string, images?: string[], messageId: string }[]
+   */
+  private async readMessages(): Promise<Array<{ text: string; images?: string[]; messageId: string; fromSelf?: boolean }>> {
+    if (!this.page) return [];
+
+    const messages: Array<{ text: string; images?: string[]; messageId: string; fromSelf?: boolean }> = [];
+
+    try {
+      // 尝试多个可能的选择器
+      const selectors = [
+        '.bubble',
+        '.message-bubble',
+        '[class*="bubble"]',
+        '.messages-container .message',
+        '.bubbles-group .bubble'
+      ];
+
+      let messageElements: any[] = [];
+      for (const selector of selectors) {
+        messageElements = await this.page.$$(selector);
+        if (messageElements.length > 0) {
+          break;
+        }
+      }
+
+      if (messageElements.length === 0) {
+        return [];
+      }
+      
+      // 只读取最近的消息
+      const recentMessages = messageElements.slice(-this.account.bufferSize * 2);
+
+      for (const el of recentMessages) {
+        // 跳过自己发的消息（兼容多种样式）
+        const isOutgoing = await el.evaluate((e: Element) => {
+          const classes = Array.from(e.classList || []);
+          const outgoingClasses = ['is-out', 'own', 'message-out', 'outgoing', 'is-me'];
+          if (classes.some(cls => outgoingClasses.includes(cls))) return true;
+          
+          const attrOut = e.getAttribute('data-out');
+          if (attrOut === 'true') return true;
+          
+          const peer = e.getAttribute('data-peer') || '';
+          if (peer.toLowerCase().includes('me')) return true;
+          
+          const hasSelfAvatar = e.querySelector('[class*="avatar"][class*="own"], [class*="avatar"][class*="self"], [class*="avatar"][class*="me"]');
+          if (hasSelfAvatar) return true;
+          
+          const role = e.getAttribute('role') || '';
+          if (role.toLowerCase().includes('outgoing')) return true;
+          
+          return false;
+        });
+        const fromSelf = isOutgoing;
+
+        // 先检查是否有图片元素（仅在启用图片识别时输出调试信息）
+        const shouldLogImageDebug = !!this.account.enableImageRecognition;
+        let images: string[] = [];
+
+        // 获取消息ID和文本
+        const msgData = await el.evaluate((e: Element) => {
+          // 获取消息ID（用于去重）
+          const mid = e.getAttribute('data-mid') || 
+                      e.getAttribute('data-message-id') ||
+                      e.getAttribute('id') ||
+                      '';
+          
+          // 获取文本
+          let content = '';
+          const textSelectors = ['.message', '.text-content', '.text', '.message-content'];
+          
+          for (const sel of textSelectors) {
+            const textEl = e.querySelector(sel);
+            if (textEl?.textContent) {
+              content = textEl.textContent.trim();
+              break;
+            }
+          }
+          
+          if (!content) {
+            content = e.textContent?.trim() || '';
+          }
+          
+          return { mid, content };
+        });
+
+        if (this.account.enableImageRecognition) {
+          const imgElements = await el.$$('img');
+          if (imgElements.length > 0) {
+            if (shouldLogImageDebug) {
+            this.log(`📷 检测到${imgElements.length}张图片，开始提取...`);
+            }
+            for (const imgEl of imgElements) {
+              try {
+                const imgBuffer = await imgEl.screenshot({ type: 'png', timeout: 5000 });
+                const base64 = imgBuffer.toString('base64');
+                images.push(`data:image/png;base64,${base64}`);
+                if (shouldLogImageDebug) {
+                this.log(`   ✅ 已提取图片 (${Math.round(base64.length / 1024)}KB)`);
+                }
+              } catch (error) {
+                if (shouldLogImageDebug) {
+                this.log(`   ⚠️  图片提取失败:`, error);
+                }
+              }
+            }
+          }
+        }
+        
+        // 生成消息ID（如果没有data-mid，用文本+时间戳）
+        const messageId = msgData.mid || `${msgData.content.substring(0, 20)}_${Date.now()}`;
+        
+        const cleanedText = this.stripTimestamp(msgData.content);
+        const hasText = cleanedText.length > 0;
+
+        // 如果没有文字内容，仅包含图片，则直接忽略（避免对纯图片进行AI回复）
+        if (!hasText && images.length === 0) {
+          continue;
+        }
+
+        // 纯图片消息：记录日志并跳过
+        if (!hasText && images.length > 0 && !fromSelf) {
+          this.log('🖼️ 检测到纯图片消息，已忽略监听');
+          continue;
+        }
+
+        // 有文字（即使附带图片），正常处理文字部分
+        messages.push({
+          text: cleanedText,
+          images: images.length > 0 ? images : undefined,
+          messageId: messageId,
+          fromSelf
+        });
+      }
+    } catch (error) {
+      this.logError('❌ 读取消息失败:', error);
+    }
+
+    // 返回最近的 bufferSize 条
+    return messages.slice(-this.account.bufferSize);
+  }
+
+  /**
+   * 发送消息
+   */
+  async sendMessage(text: string): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      // 找到消息输入框 - 适配 Telegram Web K 版本
+      const inputBox = await this.page.$('.input-message-input, [contenteditable="true"].input-field-input');
+      
+      if (inputBox) {
+        // 处理消息拆分
+        if (this.account.splitByNewline && text.includes('\n')) {
+          const parts = text.split('\n').filter(p => p.trim());
+          for (let i = 0; i < parts.length; i++) {
+            await this.sendSingleMessage(inputBox, parts[i]);
+            if (i < parts.length - 1) {
+              await this.page.waitForTimeout(this.account.multiMsgInterval * 1000);
+            }
+          }
+        } else {
+          await this.sendSingleMessage(inputBox, text);
+        }
+      } else {
+        this.log(`⚠️ 未找到消息输入框`);
+      }
+    } catch (error) {
+      this.logError('发送消息失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 去除消息中的时间戳（Telegram气泡下方的 13:49 这类文本）
+   */
+  private stripTimestamp(text: string): string {
+    if (!text) return '';
+    return text
+      .replace(/(\d{1,2}:\d{2}\s*)+$/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * 发送单条消息
+   */
+  private async sendSingleMessage(inputBox: any, text: string): Promise<void> {
+    if (!this.page) return;
+
+    // 点击输入框获取焦点
+    await inputBox.click();
+    await this.page.waitForTimeout(100);
+
+    // 输入文本
+    await inputBox.fill(text);
+    await this.page.waitForTimeout(300);
+
+    // 按 Enter 发送
+    await this.page.keyboard.press('Enter');
+    await this.page.waitForTimeout(500);
+  }
+
+  /**
+   * 更新账号状态
+   */
+  private async updateStatus(status: string): Promise<void> {
+    this.status = status;
+    await this.prisma.account.update({
+      where: { id: this.account.id },
+      data: { status }
+    });
+  }
+
+  /**
+   * 获取状态
+   */
+  getStatus(): string {
+    return this.status;
+  }
+
+  /**
+   * 获取 Page 对象（供外部使用）
+   */
+  getPage(): Page | null {
+    return this.page;
+  }
+
+  /**
+   * 停止客户端
+   */
+  async stop(): Promise<void> {
+    this.log(`🛑 停止客户端 [账号: ${this.account.phoneNumber}]`);
+    this.isRunning = false;
+
+    // 保存会话状态
+    if (this.context) {
+      try {
+        let sessionPath = this.account.sessionPath || this.getSessionPath();
+        if (!path.isAbsolute(sessionPath)) {
+          sessionPath = path.resolve(process.cwd(), sessionPath);
+        }
+        await this.context.storageState({ path: sessionPath });
+        this.log(`💾 会话已保存: ${sessionPath}`);
+      } catch (error) {
+        this.logError('保存会话失败:', error);
+      }
+    }
+
+    if (this.browser) {
+      await this.browser.close();
+      this.browser = null;
+      this.context = null;
+      this.page = null;
+    }
+
+    await this.updateStatus('offline');
+  }
+
+  // ============ 旧版 API 兼容 ============
+
+  /**
+   * 发起登录（兼容旧 API）
+   */
+  async initiateLogin(): Promise<void> {
+    await this.start();
+  }
+
+  /**
+   * 提交验证码（兼容旧 API - 新流程不需要）
+   */
+  async submitCode(code: string): Promise<void> {
+    this.log(`⚠️ 新流程不需要手动提交验证码，请在浏览器中直接操作`);
+  }
+
+  /**
+   * 提交密码（兼容旧 API - 新流程不需要）
+   */
+  async submitPassword(password: string): Promise<void> {
+    this.log(`⚠️ 新流程不需要手动提交密码，请在浏览器中直接操作`);
+  }
+
+  /**
+   * 日志工具，统一加上账号标签
+   */
+  private log(...args: any[]): void {
+    console.log(`[${this.account.phoneNumber}]`, ...args);
+  }
+
+  private logError(...args: any[]): void {
+    console.error(`[${this.account.phoneNumber}]`, ...args);
+  }
+}
