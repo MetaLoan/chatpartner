@@ -1,39 +1,39 @@
 import OpenAI from 'openai';
 
 /**
- * 获取加密货币实时价格
+ * 获取加密货币实时价格（使用 Binance API，免费且稳定）
  */
 async function fetchCryptoPrice(symbol: string): Promise<{
   price: number;
   change24h: number;
 } | null> {
   try {
-    const ids: Record<string, string> = {
-      'BTC': 'bitcoin',
-      'ETH': 'ethereum',
-      'SOL': 'solana',
-      'BNB': 'binancecoin'
+    const pairs: Record<string, string> = {
+      'BTC': 'BTCUSDT',
+      'ETH': 'ETHUSDT',
+      'SOL': 'SOLUSDT',
+      'BNB': 'BNBUSDT'
     };
     
-    const id = ids[symbol.toUpperCase()];
-    if (!id) return null;
+    const pair = pairs[symbol.toUpperCase()];
+    if (!pair) return null;
     
     const response = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`,
+      `https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`,
       { signal: AbortSignal.timeout(5000) } // 5秒超时
     );
     
     const data = await response.json();
-    const coinData = data[id];
     
-    if (!coinData) return null;
+    if (!data || !data.lastPrice) return null;
     
     return {
-      price: coinData.usd,
-      change24h: coinData.usd_24h_change || 0
+      price: parseFloat(data.lastPrice),
+      change24h: parseFloat(data.priceChangePercent) || 0
     };
   } catch (error) {
     // 静默失败，不影响主流程
+    console.log('[AI] 获取价格失败:', error);
     return null;
   }
 }
