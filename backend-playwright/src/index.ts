@@ -108,34 +108,70 @@ server.listen(PORT, () => {
   // 启动信息池服务
   infoPoolService.startAll().catch(console.error);
   
-  // 启动主动发言调度器（需要等待Telegram客户端启动后再注册）
-  // 使用重试机制确保客户端准备好
+  // 启动主动发言调度器
+  // 使用动态获取客户端的方式，避免时序问题
   const registerSendFunctions = () => {
     const clients = telegramManager.getClients();
-    console.log(`📣 注册发送函数，当前客户端数: ${clients.size}`);
+    const clientCount = clients.size;
+    
+    if (clientCount === 0) {
+      console.log(`📣 等待客户端启动...`);
+      return false;
+    }
+    
+    console.log(`📣 注册发送函数，当前客户端数: ${clientCount}`);
     
     for (const [accountId, client] of clients) {
       proactiveScheduler.registerFullSendFunctions(accountId, {
         sendText: async (msg) => {
-          await client.sendMessage(msg);
+          // 动态获取最新的客户端实例
+          const currentClient = telegramManager.getClient(accountId);
+          if (currentClient) {
+            await currentClient.sendMessage(msg);
+          } else {
+            console.log(`[账号${accountId}] ⚠️ 客户端不可用`);
+          }
         },
         sendImage: async (base64Data, caption) => {
-          await client.sendImage(base64Data, caption);
+          const currentClient = telegramManager.getClient(accountId);
+          if (currentClient) {
+            await currentClient.sendImage(base64Data, caption);
+          } else {
+            console.log(`[账号${accountId}] ⚠️ 客户端不可用`);
+          }
         }
       });
     }
+    return true;
   };
   
-  // 初次注册（等待30秒让客户端启动）
-  setTimeout(() => {
-    registerSendFunctions();
-    proactiveScheduler.startAll().catch(console.error);
-  }, 30000);
+  // 等待客户端启动后再注册（最多等待2分钟）
+  let registerAttempts = 0;
+  const maxAttempts = 24; // 24 * 5秒 = 2分钟
   
-  // 每60秒检查并重新注册（处理新启动或重启的客户端）
-  setInterval(() => {
-    registerSendFunctions();
-  }, 60000);
+  const tryRegister = () => {
+    registerAttempts++;
+    const success = registerSendFunctions();
+    
+    if (success) {
+      console.log(`📣 发送函数注册成功！`);
+      proactiveScheduler.startAll().catch(console.error);
+      
+      // 注册成功后，每60秒重新检查
+      setInterval(() => {
+        registerSendFunctions();
+      }, 60000);
+    } else if (registerAttempts < maxAttempts) {
+      // 5秒后重试
+      setTimeout(tryRegister, 5000);
+    } else {
+      console.log(`📣 等待超时，启动主动发言调度器（无客户端）`);
+      proactiveScheduler.startAll().catch(console.error);
+    }
+  };
+  
+  // 10秒后开始尝试注册
+  setTimeout(tryRegister, 10000);
 });
 
 // 优雅关闭
