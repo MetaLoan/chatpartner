@@ -350,42 +350,75 @@ export class InfoPoolService {
       return null;
     }
     
-    // 随机选择一个信息源类型
-    const randomSource = sources[Math.floor(Math.random() * sources.length)];
+    // 随机打乱信息源顺序，尝试找到有可用内容的
+    const shuffledSources = [...sources].sort(() => Math.random() - 0.5);
     
-    // 构建查询条件
-    const whereItem: any = {
-      sourceId: randomSource.id,
-      expired: false
-    };
-    
-    // 根据是否可复用决定排除条件
-    if (randomSource.reusable) {
-      // 可复用：只排除当前账号已使用的
-      whereItem.usages = { none: { accountId } };
-    } else {
-      // 不可复用：排除任何账号已使用的
-      whereItem.usages = { none: {} };
+    for (const source of shuffledSources) {
+      // 先直接查询该信息源下所有未过期的条目数量
+      const totalItems = await this.prisma.infoItem.count({
+        where: {
+          sourceId: source.id,
+          expired: false
+        }
+      });
+      
+      if (totalItems === 0) {
+        continue; // 该信息源没有内容，跳过
+      }
+      
+      // 获取当前账号已使用的条目ID
+      const usedItemIds = await this.prisma.infoItemUsage.findMany({
+        where: {
+          accountId,
+          item: { sourceId: source.id }
+        },
+        select: { itemId: true }
+      });
+      
+      const usedIds = usedItemIds.map(u => u.itemId);
+      
+      // 构建查询条件
+      const whereItem: any = {
+        sourceId: source.id,
+        expired: false
+      };
+      
+      if (source.reusable) {
+        // 可复用：只排除当前账号已使用的
+        if (usedIds.length > 0) {
+          whereItem.id = { notIn: usedIds };
+        }
+      } else {
+        // 不可复用：排除所有已使用的
+        const allUsedIds = await this.prisma.infoItemUsage.findMany({
+          where: { item: { sourceId: source.id } },
+          select: { itemId: true },
+          distinct: ['itemId']
+        });
+        const allIds = allUsedIds.map(u => u.itemId);
+        if (allIds.length > 0) {
+          whereItem.id = { notIn: allIds };
+        }
+      }
+      
+      // 查找可用条目
+      const items = await this.prisma.infoItem.findMany({
+        where: whereItem,
+        orderBy: { publishedAt: 'desc' },
+        take: 10
+      });
+      
+      if (items.length > 0) {
+        // 随机选择一条
+        const item = items[Math.floor(Math.random() * items.length)];
+        console.log(`[信息池] 选中: [${source.name}] - ${item.title || item.contentType}`);
+        return { item, source };
+      }
     }
     
-    // 查找该信息源下可用的条目
-    const items = await this.prisma.infoItem.findMany({
-      where: whereItem,
-      orderBy: { publishedAt: 'desc' },
-      take: 10
-    });
-    
-    if (items.length === 0) {
-      console.log(`[信息池] [${randomSource.name}] 无可用内容 (reusable=${randomSource.reusable})`);
-      return null;
-    }
-    
-    // 随机选择一条
-    const item = items[Math.floor(Math.random() * items.length)];
-    
-    console.log(`[信息池] 选中: [${randomSource.name}] - ${item.title || item.contentType}`);
-    
-    return { item, source: randomSource };
+    // 所有信息源都没有可用内容
+    console.log(`[信息池] 所有信息源均无可用内容 (账号ID: ${accountId})`);
+    return null;
   }
   
   /**
