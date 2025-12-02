@@ -8,11 +8,18 @@ async function fetchCryptoPrice(symbol: string): Promise<{
   change24h: number;
 } | null> {
   try {
+    // Binance 交易对映射
     const pairs: Record<string, string> = {
       'BTC': 'BTCUSDT',
       'ETH': 'ETHUSDT',
       'SOL': 'SOLUSDT',
-      'BNB': 'BNBUSDT'
+      'BNB': 'BNBUSDT',
+      'DOGE': 'DOGEUSDT',
+      'XRP': 'XRPUSDT',
+      'ZEC': 'ZECUSDT',
+      'HYPE': 'HYPEUSDT',
+      'PIPPIN': 'PIPPINUSDT',
+      'ASTER': 'ASTERUSDT'
     };
     
     const pair = pairs[symbol.toUpperCase()];
@@ -20,7 +27,7 @@ async function fetchCryptoPrice(symbol: string): Promise<{
     
     const response = await fetch(
       `https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`,
-      { signal: AbortSignal.timeout(5000) } // 5秒超时
+      { signal: AbortSignal.timeout(3000) } // 3秒超时
     );
     
     const data = await response.json();
@@ -33,8 +40,22 @@ async function fetchCryptoPrice(symbol: string): Promise<{
     };
   } catch (error) {
     // 静默失败，不影响主流程
-    console.log('[AI] 获取价格失败:', error);
     return null;
+  }
+}
+
+/**
+ * 格式化价格显示
+ */
+function formatPrice(price: number): string {
+  if (price >= 1000) {
+    return `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  } else if (price >= 1) {
+    return `$${price.toFixed(2)}`;
+  } else if (price >= 0.01) {
+    return `$${price.toFixed(4)}`;
+  } else {
+    return `$${price.toFixed(6)}`;
   }
 }
 
@@ -43,25 +64,30 @@ async function fetchCryptoPrice(symbol: string): Promise<{
  */
 async function getRealtimeContext(): Promise<string> {
   try {
-    const [btc, eth] = await Promise.all([
-      fetchCryptoPrice('BTC'),
-      fetchCryptoPrice('ETH')
-    ]);
+    // 要获取的币种列表
+    const symbols = ['BTC', 'ETH', 'SOL', 'BNB', 'DOGE', 'XRP', 'ZEC', 'HYPE', 'PIPPIN', 'ASTER'];
     
-    if (!btc && !eth) return '';
+    // 并行获取所有价格
+    const results = await Promise.all(
+      symbols.map(async (symbol) => {
+        const data = await fetchCryptoPrice(symbol);
+        return { symbol, data };
+      })
+    );
+    
+    // 过滤有效结果
+    const validResults = results.filter(r => r.data !== null);
+    
+    if (validResults.length === 0) return '';
     
     const lines: string[] = ['【实时行情】'];
     
-    if (btc) {
-      const btcChange = btc.change24h >= 0 ? `+${btc.change24h.toFixed(2)}%` : `${btc.change24h.toFixed(2)}%`;
-      const btcEmoji = btc.change24h >= 0 ? '📈' : '📉';
-      lines.push(`${btcEmoji} BTC: $${btc.price.toLocaleString()} (${btcChange})`);
-    }
-    
-    if (eth) {
-      const ethChange = eth.change24h >= 0 ? `+${eth.change24h.toFixed(2)}%` : `${eth.change24h.toFixed(2)}%`;
-      const ethEmoji = eth.change24h >= 0 ? '📈' : '📉';
-      lines.push(`${ethEmoji} ETH: $${eth.price.toLocaleString()} (${ethChange})`);
+    for (const { symbol, data } of validResults) {
+      if (data) {
+        const changeStr = data.change24h >= 0 ? `+${data.change24h.toFixed(2)}%` : `${data.change24h.toFixed(2)}%`;
+        const emoji = data.change24h >= 0 ? '📈' : '📉';
+        lines.push(`${emoji} ${symbol}: ${formatPrice(data.price)} (${changeStr})`);
+      }
     }
     
     return lines.join('\n');
