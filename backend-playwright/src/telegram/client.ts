@@ -712,6 +712,185 @@ export class TelegramClient {
   }
 
   /**
+   * 发送图片（从base64数据，使用粘贴方式）
+   */
+  async sendImage(base64Data: string, caption?: string): Promise<void> {
+    if (!this.page) {
+      this.log(`⚠️ 页面未初始化，无法发送图片`);
+      return;
+    }
+
+    try {
+      this.log(`📤 正在发送图片（粘贴方式）...`);
+      
+      // 从 base64 data URL 中提取实际数据和类型
+      let imageBuffer: Buffer;
+      let mimeType = 'image/png';
+      
+      if (base64Data.startsWith('data:')) {
+        const matches = base64Data.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (matches) {
+          mimeType = matches[1];
+          imageBuffer = Buffer.from(matches[2], 'base64');
+        } else {
+          throw new Error('无效的 base64 图片格式');
+        }
+      } else {
+        // 纯 base64 数据
+        imageBuffer = Buffer.from(base64Data, 'base64');
+      }
+      
+      this.log(`   📷 图片大小: ${(imageBuffer.length / 1024).toFixed(1)}KB, 类型: ${mimeType}`);
+      
+      // 找到消息输入框并聚焦
+      const inputBox = await this.page.$('.input-message-input, [contenteditable="true"].input-field-input');
+      if (!inputBox) {
+        throw new Error('未找到消息输入框');
+      }
+      
+      await inputBox.click();
+      await this.page.waitForTimeout(200);
+      
+      // 使用 Playwright 的 evaluate 在浏览器中执行粘贴操作
+      // 创建一个包含图片的 ClipboardItem 并触发粘贴事件
+      const pasteResult = await this.page.evaluate(async ({ base64, mime, captionText }) => {
+        try {
+          // 将 base64 转换为 Blob
+          const byteCharacters = atob(base64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: mime });
+          
+          // 创建 File 对象
+          const file = new File([blob], 'image.png', { type: mime });
+          
+          // 创建 DataTransfer 对象
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(file);
+          
+          // 找到输入区域
+          const inputArea = document.querySelector('.input-message-input, [contenteditable="true"]');
+          if (!inputArea) {
+            return { success: false, error: '未找到输入区域' };
+          }
+          
+          // 创建并触发粘贴事件
+          const pasteEvent = new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: dataTransfer
+          });
+          
+          inputArea.dispatchEvent(pasteEvent);
+          
+          return { success: true };
+        } catch (e: any) {
+          return { success: false, error: e.message };
+        }
+      }, { 
+        base64: base64Data.includes(',') ? base64Data.split(',')[1] : base64Data, 
+        mime: mimeType,
+        captionText: caption || ''
+      });
+      
+      if (!pasteResult.success) {
+        this.log(`   ⚠️ 粘贴方式失败: ${pasteResult.error}，尝试拖拽方式...`);
+        
+        // 备用方案：保存到临时文件后用 setInputFiles
+        const tempDir = path.join(process.cwd(), 'data', 'temp');
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        const tempFilePath = path.join(tempDir, `upload_${Date.now()}.png`);
+        fs.writeFileSync(tempFilePath, imageBuffer);
+        
+        try {
+          // 使用 filechooser 事件
+          const [fileChooser] = await Promise.all([
+            this.page.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null),
+            this.page.evaluate(() => {
+              // 触发文件选择
+              const input = document.querySelector('input[type="file"][accept*="image"]') as HTMLInputElement;
+              if (input) input.click();
+            })
+          ]);
+          
+          if (fileChooser) {
+            await fileChooser.setFiles(tempFilePath);
+            this.log(`   ✅ 通过文件选择器上传`);
+          } else {
+            // 最后方案：直接设置 input
+            const fileInput = await this.page.$('input[type="file"]');
+            if (fileInput) {
+              await fileInput.setInputFiles(tempFilePath);
+              this.log(`   ✅ 直接设置文件输入`);
+            } else {
+              throw new Error('无法上传图片');
+            }
+          }
+        } finally {
+          // 清理临时文件
+          try { fs.unlinkSync(tempFilePath); } catch (e) {}
+        }
+      } else {
+        this.log(`   ✅ 粘贴成功`);
+      }
+      
+      // 等待图片预览出现
+      await this.page.waitForTimeout(1500);
+      
+      // 检查是否有弹窗（发送确认）
+      const popup = await this.page.$('.popup-send-photo, .popup-new-media, .popup');
+      if (popup) {
+        this.log(`   📋 检测到发送确认弹窗`);
+        
+        // 如果有说明文字，输入它
+        if (caption) {
+          const captionInput = await popup.$('.input-field-input, [contenteditable="true"], input');
+          if (captionInput) {
+            await captionInput.click();
+            await captionInput.fill(caption);
+            this.log(`   💬 已添加说明文字`);
+            await this.page.waitForTimeout(200);
+          }
+        }
+        
+        // 点击发送按钮
+        const sendBtn = await popup.$('.btn-primary, .popup-send-btn, button:has-text("Send"), button:has-text("发送")');
+        if (sendBtn) {
+          await sendBtn.click();
+          this.log(`   📨 点击发送按钮`);
+        } else {
+          // 按 Enter 发送
+          await this.page.keyboard.press('Enter');
+          this.log(`   ⏎ 按 Enter 发送`);
+        }
+      } else {
+        // 没有弹窗，可能图片直接在输入框预览
+        // 如果有说明文字，输入它
+        if (caption) {
+          await inputBox.fill(caption);
+          await this.page.waitForTimeout(200);
+        }
+        
+        // 按 Enter 发送
+        await this.page.keyboard.press('Enter');
+        this.log(`   ⏎ 按 Enter 发送`);
+      }
+      
+      await this.page.waitForTimeout(1000);
+      this.log(`✅ 图片发送完成`);
+      
+    } catch (error) {
+      this.logError('发送图片失败:', error);
+      throw error;
+    }
+  }
+
+  /**
    * 更新账号状态
    */
   private async updateStatus(status: string): Promise<void> {

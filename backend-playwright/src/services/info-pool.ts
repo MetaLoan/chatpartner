@@ -345,35 +345,45 @@ export class InfoPoolService {
       where: whereSource
     });
     
-    if (sources.length === 0) return null;
+    if (sources.length === 0) {
+      console.log(`[信息池] 没有启用的信息源`);
+      return null;
+    }
     
     // 随机选择一个信息源类型
     const randomSource = sources[Math.floor(Math.random() * sources.length)];
     
+    // 构建查询条件
+    const whereItem: any = {
+      sourceId: randomSource.id,
+      expired: false
+    };
+    
+    // 根据是否可复用决定排除条件
+    if (randomSource.reusable) {
+      // 可复用：只排除当前账号已使用的
+      whereItem.usages = { none: { accountId } };
+    } else {
+      // 不可复用：排除任何账号已使用的
+      whereItem.usages = { none: {} };
+    }
+    
     // 查找该信息源下可用的条目
     const items = await this.prisma.infoItem.findMany({
-      where: {
-        sourceId: randomSource.id,
-        expired: false,
-        // 如果不可复用，排除已被任何账号使用的
-        ...(randomSource.reusable ? {} : {
-          usages: { none: {} }
-        }),
-        // 如果可复用，排除已被当前账号使用的
-        ...(randomSource.reusable ? {
-          usages: {
-            none: { accountId }
-          }
-        } : {})
-      },
+      where: whereItem,
       orderBy: { publishedAt: 'desc' },
       take: 10
     });
     
-    if (items.length === 0) return null;
+    if (items.length === 0) {
+      console.log(`[信息池] [${randomSource.name}] 无可用内容 (reusable=${randomSource.reusable})`);
+      return null;
+    }
     
     // 随机选择一条
     const item = items[Math.floor(Math.random() * items.length)];
+    
+    console.log(`[信息池] 选中: [${randomSource.name}] - ${item.title || item.contentType}`);
     
     return { item, source: randomSource };
   }

@@ -25,7 +25,7 @@ messageRoutes.get('/', async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         include: {
           account: { select: { phoneNumber: true, nickname: true } },
-          group: { select: { title: true } }
+          group: { select: { name: true } }
         }
       }),
       prisma.message.count({ where })

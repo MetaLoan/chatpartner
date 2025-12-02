@@ -11,6 +11,7 @@ import { authRoutes } from './routes/auth.js';
 import { configRoutes } from './routes/config.js';
 import { statisticsRoutes } from './routes/statistics.js';
 import { infoPoolRoutes } from './routes/info-pool.js';
+import { backupRoutes } from './routes/backup.js';
 import { InfoPoolService } from './services/info-pool.js';
 import { ProactiveScheduler } from './services/proactive-scheduler.js';
 
@@ -72,6 +73,9 @@ app.use('/api/v1/statistics', statisticsRoutes);
 // 信息池路由 (v2.0)
 app.use('/api/v1/info-pool', infoPoolRoutes);
 
+// 备份恢复路由
+app.use('/api/v1/backup', backupRoutes);
+
 // 健康检查
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', version: '1.0.0' });
@@ -94,11 +98,16 @@ server.listen(PORT, () => {
   
   // 启动主动发言调度器（需要等待Telegram客户端启动后再注册）
   setTimeout(() => {
-    // 为每个在线的客户端注册发送函数
+    // 为每个在线的客户端注册发送函数（包括图片发送）
     const clients = telegramManager.getClients();
     for (const [accountId, client] of clients) {
-      proactiveScheduler.registerSendFunction(accountId, async (msg) => {
-        await client.sendMessage(msg);
+      proactiveScheduler.registerFullSendFunctions(accountId, {
+        sendText: async (msg) => {
+          await client.sendMessage(msg);
+        },
+        sendImage: async (base64Data, caption) => {
+          await client.sendImage(base64Data, caption);
+        }
       });
     }
     proactiveScheduler.startAll().catch(console.error);

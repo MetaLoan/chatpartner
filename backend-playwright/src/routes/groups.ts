@@ -33,9 +33,7 @@ groupRoutes.get('/', async (req: Request, res: Response) => {
         take: pageSize,
         orderBy: { createdAt: 'desc' },
         include: {
-          accounts: {
-            include: { account: true }
-          }
+          accounts: true
         }
       }),
       prisma.group.count()
