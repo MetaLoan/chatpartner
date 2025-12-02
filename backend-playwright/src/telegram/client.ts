@@ -22,6 +22,7 @@ export class TelegramClient {
   private isRunning: boolean = false;
   private lastReplyTime: Map<string, Date> = new Map();
   private lastSeenMessageId: string = ''; // 最后看到的消息标识
+  private targetGroupId: string = ''; // 目标群组ID，用于重新定位
 
   constructor(account: Account, prisma: PrismaClient) {
     this.account = account;
@@ -254,6 +255,101 @@ export class TelegramClient {
   }
 
   /**
+   * 通过搜索框搜索并进入群组
+   */
+  async searchAndEnterGroup(groupId: string): Promise<boolean> {
+    if (!this.page) return false;
+    
+    try {
+      this.log(`🔍 通过搜索框查找群组: ${groupId}`);
+      
+      // 点击搜索框
+      const searchInput = await this.page.$('.input-search input, input[type="search"], .search-input input, #telegram-search-input');
+      if (searchInput) {
+        await searchInput.click();
+        await this.page.waitForTimeout(500);
+      } else {
+        // 尝试点击搜索按钮/图标
+        const searchBtn = await this.page.$('.btn-menu-toggle, .sidebar-header button, [class*="search"]');
+        if (searchBtn) {
+          await searchBtn.click();
+          await this.page.waitForTimeout(500);
+        }
+      }
+      
+      // 等待搜索输入框出现并输入
+      await this.page.waitForSelector('.input-search input, input[placeholder*="Search"], input[type="search"]', { timeout: 5000 });
+      const input = await this.page.$('.input-search input, input[placeholder*="Search"], input[type="search"]');
+      
+      if (!input) {
+        this.log(`   ⚠️ 未找到搜索输入框`);
+        return false;
+      }
+      
+      // 清空并输入群组ID
+      await input.click();
+      await this.page.waitForTimeout(200);
+      await input.fill('');
+      await this.page.waitForTimeout(200);
+      await input.fill(groupId);
+      await this.page.waitForTimeout(1500); // 等待搜索结果
+      
+      this.log(`   📋 已输入搜索: ${groupId}`);
+      
+      // 点击搜索结果中的群组
+      // 尝试多种选择器匹配搜索结果
+      const resultSelectors = [
+        `.search-super-content-chats .chatlist-chat`,
+        `.chatlist-chat`,
+        `[data-peer-id="${groupId}"]`,
+        `[data-peer-id="-${groupId}"]`,
+        `.search-group .chatlist-chat`,
+        `.search-super .row`
+      ];
+      
+      for (const selector of resultSelectors) {
+        const result = await this.page.$(selector);
+        if (result) {
+          await result.click();
+          this.log(`   ✅ 点击搜索结果进入群组`);
+          await this.page.waitForTimeout(2000);
+          
+          // 按 Escape 关闭搜索
+          await this.page.keyboard.press('Escape');
+          await this.page.waitForTimeout(500);
+          
+          return true;
+        }
+      }
+      
+      this.log(`   ⚠️ 搜索结果中未找到匹配的群组`);
+      
+      // 按 Escape 关闭搜索
+      await this.page.keyboard.press('Escape');
+      
+      return false;
+    } catch (e) {
+      this.log(`   ⚠️ 搜索群组出错: ${e}`);
+      return false;
+    }
+  }
+
+  /**
+   * 检查是否已进入群组（有消息输入框）
+   */
+  async isInGroup(): Promise<boolean> {
+    if (!this.page) return false;
+    
+    try {
+      // 检查是否有消息输入框
+      const inputBox = await this.page.$('.input-message-input, [contenteditable="true"].input-field-input, div[class*="composer"] [contenteditable]');
+      return !!inputBox;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * 跳转到指定群组并开始监控
    */
   async navigateToGroupAndMonitor(groupTelegramId: string): Promise<void> {
@@ -283,25 +379,41 @@ export class TelegramClient {
 
     // 构建群组 URL
     const normalizedId = groupTelegramId.replace('-', '');
+    this.log(`🚀 准备进入群组: ${normalizedId}`);
+
+    // 方法1: 先尝试直接URL跳转
     const groupUrl = `https://web.telegram.org/k/#-${normalizedId}`;
-    this.log(`🚀 跳转到群组: ${groupUrl}`);
-
     await this.page.goto(groupUrl, { waitUntil: 'domcontentloaded' });
-    await this.page.waitForTimeout(3000); // 增加等待时间
+    await this.page.waitForTimeout(3000);
 
-    // 校验是否成功跳转到目标群组
-    const currentUrl = this.page.url();
-    if (!currentUrl.includes(`#-${normalizedId}`)) {
-      this.log(`❌ 跳转失败，当前URL: ${currentUrl}`);
-      throw new Error(`无法跳转到群组 ${groupTelegramId}`);
+    // 检查是否成功进入群组
+    let inGroup = await this.isInGroup();
+    
+    if (!inGroup) {
+      this.log(`   📋 URL跳转未进入群组，尝试搜索方式...`);
+      // 方法2: 使用搜索框搜索进入
+      const searchSuccess = await this.searchAndEnterGroup(normalizedId);
+      
+      if (searchSuccess) {
+        await this.page.waitForTimeout(2000);
+        inGroup = await this.isInGroup();
+      }
     }
 
-    this.log(`✅ 已进入目标群组`);
+    if (inGroup) {
+      this.log(`✅ 已成功进入目标群组`);
+    } else {
+      this.log(`⚠️ 可能未成功进入群组，将继续尝试监控`);
+    }
+    
     this.log(`👂 开始监控群组消息...`);
     
     // 确保状态正确
     this.isRunning = true;
     this.status = 'online';
+    
+    // 保存目标群组ID用于后续重新定位
+    this.targetGroupId = normalizedId;
     
     // 开始消息监听循环（异步执行，不阻塞）
     this.startMessageLoop(normalizedId).catch((error) => {
@@ -315,43 +427,68 @@ export class TelegramClient {
   private async startMessageLoop(groupId?: string): Promise<void> {
     this.log(`⏰ 消息监听循环已启动 [监听间隔: ${this.account.listenInterval}秒]`);
 
-    const targetGroupUrl = groupId ? `#-${groupId.replace('-', '')}` : null;
     let isActivelyMonitoring = true; // 是否正在积极监控
+    let consecutiveNoInputCount = 0; // 连续找不到输入框的次数
+    const MAX_NO_INPUT_RETRIES = 3; // 最大重试次数
     
-    this.log(`🔍 目标URL: ${targetGroupUrl}`);
+    this.log(`🔍 目标群组ID: ${this.targetGroupId}`);
 
     while (this.isRunning && this.page) {
       try {
-        // 校验当前URL是否是目标群组
-        if (targetGroupUrl) {
-          const currentUrl = this.page.url();
-          const isOnTargetPage = currentUrl.includes(targetGroupUrl);
+        // 检查是否能找到输入框（说明在群组内）
+        const inGroup = await this.isInGroup();
+        
+        if (!inGroup) {
+          consecutiveNoInputCount++;
           
-          if (!isOnTargetPage) {
-            if (isActivelyMonitoring) {
-              // 刚切换离开目标页面
-              this.log(`⏸️ 检测到页面已切换，停止监听`);
-              this.log(`   期望: ${targetGroupUrl}`);
-              this.log(`   当前: ${currentUrl}`);
-              this.log(`   → 等待用户手动切换回目标群组页面...`);
-              isActivelyMonitoring = false;
-              await this.updateStatus('idle'); // 设置为空闲状态
-            }
-            // 不在目标页面，只是轮询检查URL，不处理消息
-            await this.page.waitForTimeout(5000); // 每5秒检查一次
-            continue;
-          } else if (!isActivelyMonitoring) {
-            // 回到目标页面了
-            this.log(`✅ 检测到已回到目标群组，重新开始监听`);
-            isActivelyMonitoring = true;
-            await this.updateStatus('online');
+          if (consecutiveNoInputCount === 1) {
+            this.log(`⚠️ 未找到消息输入框，可能未在群组内`);
           }
+          
+          if (consecutiveNoInputCount >= MAX_NO_INPUT_RETRIES && this.targetGroupId) {
+            this.log(`🔄 连续${MAX_NO_INPUT_RETRIES}次找不到输入框，尝试重新定位群组...`);
+            
+            // 尝试通过搜索重新进入群组
+            const searchSuccess = await this.searchAndEnterGroup(this.targetGroupId);
+            
+            if (searchSuccess) {
+              await this.page.waitForTimeout(2000);
+              const nowInGroup = await this.isInGroup();
+              if (nowInGroup) {
+                this.log(`✅ 重新定位成功，恢复监控`);
+                consecutiveNoInputCount = 0;
+                isActivelyMonitoring = true;
+                await this.updateStatus('online');
+              } else {
+                this.log(`⚠️ 重新定位后仍未进入群组`);
+                isActivelyMonitoring = false;
+                await this.updateStatus('idle');
+              }
+            } else {
+              this.log(`⚠️ 搜索定位失败`);
+              isActivelyMonitoring = false;
+              await this.updateStatus('idle');
+            }
+            
+            // 重置计数，避免频繁重试
+            consecutiveNoInputCount = 0;
+          }
+          
+          // 等待后继续检查
+          await this.page.waitForTimeout(5000);
+          continue;
         }
-
-        // 只有在目标页面时才处理消息
-        if (isActivelyMonitoring) {
-          await this.processCurrentChat(groupId);
+        
+        // 找到输入框，说明在群组内
+        if (!isActivelyMonitoring) {
+          this.log(`✅ 检测到已进入群组，开始监听`);
+          isActivelyMonitoring = true;
+          await this.updateStatus('online');
         }
+        consecutiveNoInputCount = 0;
+        
+        // 处理消息
+        await this.processCurrentChat(groupId);
         
       } catch (error) {
         this.logError(`❌ 消息处理错误:`, error);
