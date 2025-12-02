@@ -212,7 +212,7 @@
     </el-dialog>
 
     <!-- 添加手动图片对话框 -->
-    <el-dialog v-model="imageDialogVisible" title="添加图片内容" width="500px">
+    <el-dialog v-model="imageDialogVisible" title="批量添加图片" width="600px">
       <el-form :model="imageForm" label-width="80px">
         <el-form-item label="信息源">
           <el-select v-model="imageForm.source_id" style="width: 100%">
@@ -224,27 +224,31 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="标题">
-          <el-input v-model="imageForm.title" placeholder="可选" />
-        </el-form-item>
-        <el-form-item label="说明">
-          <el-input v-model="imageForm.content" placeholder="图片说明文字（可选）" />
-        </el-form-item>
         <el-form-item label="图片" required>
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
-            :limit="1"
+            :limit="50"
+            multiple
             accept="image/*"
+            :file-list="selectedImages"
             :on-change="handleImageChange"
+            :on-remove="handleImageRemove"
+            list-type="picture-card"
           >
-            <el-button type="primary">选择图片</el-button>
+            <el-icon><Plus /></el-icon>
+            <template #tip>
+              <div class="el-upload__tip">支持批量选择，最多50张图片（jpg/png/gif）</div>
+            </template>
           </el-upload>
         </el-form-item>
       </el-form>
       <template #footer>
+        <span style="float: left; color: #909399;">已选择 {{ selectedImages.length }} 张图片</span>
         <el-button @click="imageDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSaveImage">上传</el-button>
+        <el-button type="primary" @click="handleSaveImages" :loading="uploadLoading">
+          批量上传
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -253,6 +257,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import api from '@/api/index'
 
 // 统计数据
@@ -307,11 +312,10 @@ const textForm = reactive({
 // 手动图片对话框
 const imageDialogVisible = ref(false)
 const imageForm = reactive({
-  source_id: null,
-  title: '',
-  content: ''
+  source_id: null
 })
-const selectedImage = ref(null)
+const selectedImages = ref([])
+const uploadLoading = ref(false)
 
 // 计算属性
 const hasManualTextSource = computed(() => sources.value.some(s => s.type === 'manual_text'))
@@ -510,38 +514,64 @@ const handleSaveText = async () => {
 const handleAddManualImage = () => {
   const manualImageSource = sources.value.find(s => s.type === 'manual_image')
   imageForm.source_id = manualImageSource?.id || null
-  imageForm.title = ''
-  imageForm.content = ''
-  selectedImage.value = null
+  selectedImages.value = []
   imageDialogVisible.value = true
 }
 
-const handleImageChange = (file) => {
-  selectedImage.value = file.raw
+const handleImageChange = (file, fileList) => {
+  selectedImages.value = fileList
 }
 
-const handleSaveImage = async () => {
-  if (!imageForm.source_id || !selectedImage.value) {
-    ElMessage.warning('请选择图片')
+const handleImageRemove = (file, fileList) => {
+  selectedImages.value = fileList
+}
+
+const handleSaveImages = async () => {
+  if (!imageForm.source_id) {
+    ElMessage.warning('请选择信息源')
     return
   }
+  if (selectedImages.value.length === 0) {
+    ElMessage.warning('请选择至少一张图片')
+    return
+  }
+  
+  uploadLoading.value = true
+  let successCount = 0
+  let failCount = 0
+  
   try {
-    const formData = new FormData()
-    formData.append('source_id', imageForm.source_id)
-    formData.append('title', imageForm.title)
-    formData.append('content', imageForm.content)
-    formData.append('image', selectedImage.value)
+    for (const file of selectedImages.value) {
+      try {
+        const formData = new FormData()
+        formData.append('source_id', imageForm.source_id)
+        formData.append('image', file.raw)
+        
+        await api.post('/info-pool/items/image', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        successCount++
+      } catch (error) {
+        console.error('上传失败:', file.name, error)
+        failCount++
+      }
+    }
     
-    await api.post('/info-pool/items/image', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    ElMessage.success('上传成功')
+    if (failCount === 0) {
+      ElMessage.success(`成功上传 ${successCount} 张图片`)
+    } else {
+      ElMessage.warning(`上传完成：成功 ${successCount} 张，失败 ${failCount} 张`)
+    }
+    
     imageDialogVisible.value = false
+    selectedImages.value = []
     loadItems()
     loadStats()
   } catch (error) {
-    console.error('上传失败:', error)
-    ElMessage.error('上传失败')
+    console.error('批量上传失败:', error)
+    ElMessage.error('批量上传失败')
+  } finally {
+    uploadLoading.value = false
   }
 }
 

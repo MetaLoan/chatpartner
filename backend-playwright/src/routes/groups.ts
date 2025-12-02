@@ -9,11 +9,10 @@ function formatGroup(group: any) {
     id: group.id,
     telegram_id: group.telegramId,
     chat_id: group.telegramId, // 兼容旧字段名
-    title: group.title,
-    type: group.type,
-    username: group.username,
+    title: group.name,  // 数据库字段是 name
+    name: group.name,
     member_count: group.memberCount,
-    status: 'active', // 默认状态
+    is_active: group.isActive,
     created_at: group.createdAt,
     updated_at: group.updatedAt,
     accounts: group.accounts
@@ -119,9 +118,7 @@ groupRoutes.post('/', async (req: Request, res: Response) => {
     const group = await prisma.group.create({
       data: {
         telegramId: groupId,
-        title,
-        type: type || 'group',
-        username
+        name: title  // 数据库字段是 name
       }
     });
 
