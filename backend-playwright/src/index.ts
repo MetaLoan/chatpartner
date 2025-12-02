@@ -109,9 +109,11 @@ server.listen(PORT, () => {
   infoPoolService.startAll().catch(console.error);
   
   // 启动主动发言调度器（需要等待Telegram客户端启动后再注册）
-  setTimeout(() => {
-    // 为每个在线的客户端注册发送函数（包括图片发送）
+  // 使用重试机制确保客户端准备好
+  const registerSendFunctions = () => {
     const clients = telegramManager.getClients();
+    console.log(`📣 注册发送函数，当前客户端数: ${clients.size}`);
+    
     for (const [accountId, client] of clients) {
       proactiveScheduler.registerFullSendFunctions(accountId, {
         sendText: async (msg) => {
@@ -122,8 +124,18 @@ server.listen(PORT, () => {
         }
       });
     }
+  };
+  
+  // 初次注册（等待30秒让客户端启动）
+  setTimeout(() => {
+    registerSendFunctions();
     proactiveScheduler.startAll().catch(console.error);
-  }, 10000); // 等待10秒让Telegram客户端启动
+  }, 30000);
+  
+  // 每60秒检查并重新注册（处理新启动或重启的客户端）
+  setInterval(() => {
+    registerSendFunctions();
+  }, 60000);
 });
 
 // 优雅关闭
