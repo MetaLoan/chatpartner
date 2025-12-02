@@ -23,6 +23,8 @@ export class TelegramClient {
   private lastReplyTime: Map<string, Date> = new Map();
   private lastSeenMessageId: string = ''; // 最后看到的消息标识
   private targetGroupId: string = ''; // 目标群组ID，用于重新定位
+  private recentSentMessages: string[] = []; // 最近发送的消息内容，用于去重
+  private readonly MAX_SENT_HISTORY = 20; // 最多保留多少条发送记录
 
   constructor(account: Account, prisma: PrismaClient) {
     this.account = account;
@@ -605,9 +607,23 @@ export class TelegramClient {
       );
 
       if (reply) {
+        // 检查是否发送过相同或相似的内容
+        const normalizedReply = reply.trim().toLowerCase();
+        const isDuplicate = this.recentSentMessages.some(sent => {
+          const normalizedSent = sent.trim().toLowerCase();
+          // 完全相同或高度相似（前10个字相同）
+          return normalizedSent === normalizedReply || 
+                 (normalizedReply.length > 5 && normalizedSent.startsWith(normalizedReply.substring(0, 10)));
+        });
+        
+        if (isDuplicate) {
+          this.log(`🚫 AI生成了重复内容，跳过发送: "${reply.substring(0, 30)}..."`);
+          return;
+        }
+        
         const replyPreview = reply.length > 80 ? reply.substring(0, 80) + '...' : reply;
         this.log(`🤖 AI回复内容: "${replyPreview}"`);
-        await this.sendMessage(reply);
+        await this.sendMessage(reply);  // sendMessage 会自动记录到 recentSentMessages
         this.log(`✅ 发送成功!\n`);
 
         // 更新最后回复时间
@@ -794,12 +810,16 @@ export class TelegramClient {
           const parts = text.split('\n').filter(p => p.trim());
           for (let i = 0; i < parts.length; i++) {
             await this.sendSingleMessage(inputBox, parts[i]);
+            // 记录每条消息
+            this.recordSentMessage(parts[i]);
             if (i < parts.length - 1) {
               await this.page.waitForTimeout(this.account.multiMsgInterval * 1000);
             }
           }
         } else {
           await this.sendSingleMessage(inputBox, text);
+          // 记录发送的消息
+          this.recordSentMessage(text);
         }
       } else {
         this.log(`⚠️ 未找到消息输入框`);
@@ -807,6 +827,16 @@ export class TelegramClient {
     } catch (error) {
       this.logError('发送消息失败:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * 记录已发送的消息（用于去重）
+   */
+  private recordSentMessage(text: string): void {
+    this.recentSentMessages.push(text);
+    if (this.recentSentMessages.length > this.MAX_SENT_HISTORY) {
+      this.recentSentMessages.shift();
     }
   }
 
