@@ -487,7 +487,11 @@ const handleDeleteItem = async (row) => {
 // 手动添加文字
 const handleAddManualText = () => {
   const manualTextSource = sources.value.find(s => s.type === 'manual_text')
-  textForm.source_id = manualTextSource?.id || null
+  if (!manualTextSource) {
+    ElMessage.warning('请先添加一个"手动文字"类型的信息源')
+    return
+  }
+  textForm.source_id = manualTextSource.id
   textForm.title = ''
   textForm.content = ''
   textDialogVisible.value = true
@@ -513,7 +517,11 @@ const handleSaveText = async () => {
 // 手动添加图片
 const handleAddManualImage = () => {
   const manualImageSource = sources.value.find(s => s.type === 'manual_image')
-  imageForm.source_id = manualImageSource?.id || null
+  if (!manualImageSource) {
+    ElMessage.warning('请先添加一个"手动图片"类型的信息源')
+    return
+  }
+  imageForm.source_id = manualImageSource.id
   selectedImages.value = []
   imageDialogVisible.value = true
 }
