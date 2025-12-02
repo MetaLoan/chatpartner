@@ -1,6 +1,76 @@
 import OpenAI from 'openai';
 
 /**
+ * 获取加密货币实时价格
+ */
+async function fetchCryptoPrice(symbol: string): Promise<{
+  price: number;
+  change24h: number;
+} | null> {
+  try {
+    const ids: Record<string, string> = {
+      'BTC': 'bitcoin',
+      'ETH': 'ethereum',
+      'SOL': 'solana',
+      'BNB': 'binancecoin'
+    };
+    
+    const id = ids[symbol.toUpperCase()];
+    if (!id) return null;
+    
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`,
+      { signal: AbortSignal.timeout(5000) } // 5秒超时
+    );
+    
+    const data = await response.json();
+    const coinData = data[id];
+    
+    if (!coinData) return null;
+    
+    return {
+      price: coinData.usd,
+      change24h: coinData.usd_24h_change || 0
+    };
+  } catch (error) {
+    // 静默失败，不影响主流程
+    return null;
+  }
+}
+
+/**
+ * 获取实时市场数据上下文
+ */
+async function getRealtimeContext(): Promise<string> {
+  try {
+    const [btc, eth] = await Promise.all([
+      fetchCryptoPrice('BTC'),
+      fetchCryptoPrice('ETH')
+    ]);
+    
+    if (!btc && !eth) return '';
+    
+    const lines: string[] = ['【实时行情】'];
+    
+    if (btc) {
+      const btcChange = btc.change24h >= 0 ? `+${btc.change24h.toFixed(2)}%` : `${btc.change24h.toFixed(2)}%`;
+      const btcEmoji = btc.change24h >= 0 ? '📈' : '📉';
+      lines.push(`${btcEmoji} BTC: $${btc.price.toLocaleString()} (${btcChange})`);
+    }
+    
+    if (eth) {
+      const ethChange = eth.change24h >= 0 ? `+${eth.change24h.toFixed(2)}%` : `${eth.change24h.toFixed(2)}%`;
+      const ethEmoji = eth.change24h >= 0 ? '📈' : '📉';
+      lines.push(`${ethEmoji} ETH: $${eth.price.toLocaleString()} (${ethChange})`);
+    }
+    
+    return lines.join('\n');
+  } catch {
+    return '';
+  }
+}
+
+/**
  * AI 服务 - 使用 OpenAI 兼容 API 生成回复
  */
 export class AIService {
@@ -32,6 +102,10 @@ export class AIService {
       const messageArray = Array.isArray(messages) ? messages : [];
       const isMultiModal = enableImages && messageArray.length > 0 && messageArray.some(m => m.images && m.images.length > 0);
 
+      // 获取实时市场数据
+      const realtimeData = await getRealtimeContext();
+      const realtimeSection = realtimeData ? `\n\n${realtimeData}\n` : '';
+
       if (isMultiModal) {
         // 多模态模式：支持图片
         formattedContent = messageArray
@@ -51,7 +125,7 @@ export class AIService {
 以下是群里最近的对话记录，请作为背景资料整体理解：
 
 ${formattedContent}
-
+${realtimeSection}
 【回复要求】
 1. 先花3秒理解：大家在聊什么话题？氛围如何？图片在表达什么？
 2. 整体把握：不要逐句回应，要针对整个话题发表看法
@@ -59,6 +133,7 @@ ${formattedContent}
 4. 连贯完整：用1-3句话表达一个完整的观点，语义要连贯
 5. 融入氛围：根据你的人设风格，自然地参与讨论
 6. 如有图片：可以自然地提及图片内容，但不要生硬地说"我看到图片"
+7. 如果群里在讨论行情，可以参考实时数据自然地融入讨论
 
 现在，用你的风格说点什么：`
           }
@@ -101,13 +176,14 @@ ${formattedContent}
 以下是群里最近的对话记录，请作为背景资料整体理解：
 
 ${formattedContent}
-
+${realtimeSection}
 【回复要求】
 1. 先花3秒理解：大家在聊什么话题？氛围如何？
 2. 整体把握：不要逐句回应，要针对整个话题发表看法
 3. 自然表达：像真人聊天一样，不要说"根据上述"、"我觉得"等生硬开头
 4. 连贯完整：用1-3句话表达一个完整的观点，语义要连贯
 5. 融入氛围：根据你的人设风格，自然地参与讨论
+6. 如果群里在讨论行情，可以参考实时数据自然地融入讨论
 
 现在，用你的风格说点什么：`
         });
