@@ -122,80 +122,6 @@
       </div>
     </el-card>
 
-    <!-- 登录认证对话框 -->
-    <el-dialog
-      v-model="authDialogVisible"
-      :title="authAccount ? `账号登录认证 - ${authAccount.phone_number}` : '账号登录认证'"
-      width="450px"
-    >
-      <div v-if="authAccount">
-        <el-steps :active="getAuthStep(authStatus.state)" finish-status="success" simple>
-          <el-step title="发送验证码" />
-          <el-step title="输入验证码" />
-          <el-step title="完成登录" />
-        </el-steps>
-
-        <el-alert
-          :title="authStatus.message || '等待中...'"
-          :type="authStatus.state === 'authenticated' ? 'success' : 'info'"
-          :closable="false"
-          show-icon
-          style="margin: 20px 0"
-        />
-
-        <el-form label-width="100px">
-          <el-form-item label="验证码" v-if="authStatus.state === 'code_required'">
-            <el-input
-              v-model="authCode"
-              placeholder="请输入收到的验证码"
-              style="width: 200px"
-            />
-            <el-button
-              type="primary"
-              size="small"
-              style="margin-left: 8px"
-              :loading="authLoading"
-              @click="handleSubmitCode"
-            >
-              提交
-            </el-button>
-          </el-form-item>
-
-          <el-form-item label="2FA密码" v-if="authStatus.state === 'password_required'">
-            <el-input
-              v-model="authPassword"
-              type="password"
-              show-password
-              placeholder="请输入两步验证密码"
-              style="width: 200px"
-            />
-            <el-button
-              type="primary"
-              size="small"
-              style="margin-left: 8px"
-              :loading="authLoading"
-              @click="handleSubmitPassword"
-            >
-              提交
-            </el-button>
-          </el-form-item>
-        </el-form>
-
-        <div style="margin-top: 16px; text-align: right">
-          <el-button size="small" @click="loadAuthStatus(authAccount.id)">
-            刷新状态
-          </el-button>
-          <el-button
-            size="small"
-            type="primary"
-            @click="() => { loadAccounts(); authDialogVisible = false }"
-          >
-            关闭
-          </el-button>
-        </div>
-      </div>
-    </el-dialog>
-
     <!-- 添加/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
@@ -349,11 +275,8 @@ import {
   loginAccount,
   logoutAccount
 } from '@/api/accounts'
-import {
-  getAuthStatus,
-  submitAuthCode,
-  submitAuthPassword
-} from '@/api/auth'
+// 不再需要认证弹窗相关的API
+// import { getAuthStatus, submitAuthCode, submitAuthPassword } from '@/api/auth'
 
 const accounts = ref([])
 const loading = ref(false)
@@ -412,14 +335,6 @@ const rules = {
 
 let editingId = null
 
-// 登录认证相关
-const authDialogVisible = ref(false)
-const authLoading = ref(false)
-const authAccount = ref(null)
-const authStatus = ref({ state: 'none', message: '' })
-const authCode = ref('')
-const authPassword = ref('')
-
 const getStatusType = (status) => {
   const types = {
     online: 'success',
@@ -438,26 +353,6 @@ const getStatusText = (status) => {
     error: '错误'
   }
   return texts[status] || status
-}
-
-const getAuthStep = (state) => {
-  const steps = {
-    none: 0,
-    code_sent: 1,
-    code_required: 1,
-    password_required: 2,
-    authenticated: 3
-  }
-  return steps[state] || 0
-}
-
-const loadAuthStatus = async (accountId) => {
-  try {
-    const res = await getAuthStatus(accountId)
-    authStatus.value = res
-  } catch (error) {
-    console.error('获取认证状态失败:', error)
-  }
 }
 
 const loadAccounts = async () => {
@@ -559,13 +454,10 @@ const handleDelete = async (row) => {
 const handleLogin = async (row) => {
   try {
     await loginAccount(row.id)
-    ElMessage.success('登录请求已提交，请查收验证码')
-
-    authAccount.value = row
-    authCode.value = ''
-    authPassword.value = ''
-    await loadAuthStatus(row.id)
-    authDialogVisible.value = true
+    ElMessage.success('浏览器已打开，请在浏览器中完成登录')
+    // 不再显示弹窗，用户直接在浏览器中操作
+    // 定时刷新账号状态
+    setTimeout(() => loadAccounts(), 5000)
   } catch (error) {
     console.error('登录失败:', error)
     ElMessage.error(error.response?.data?.error || '登录失败')
@@ -583,40 +475,6 @@ const handleLogout = async (row) => {
       console.error('登出失败:', error)
       ElMessage.error('登出失败')
     }
-  }
-}
-
-const handleSubmitCode = async () => {
-  if (!authAccount.value || !authCode.value) {
-    ElMessage.error('请输入验证码')
-    return
-  }
-  authLoading.value = true
-  try {
-    await submitAuthCode(authAccount.value.id, { code: authCode.value })
-    ElMessage.success('验证码已提交')
-    await loadAuthStatus(authAccount.value.id)
-  } catch (error) {
-    ElMessage.error(error.response?.data?.error || '提交验证码失败')
-  } finally {
-    authLoading.value = false
-  }
-}
-
-const handleSubmitPassword = async () => {
-  if (!authAccount.value || !authPassword.value) {
-    ElMessage.error('请输入2FA密码')
-    return
-  }
-  authLoading.value = true
-  try {
-    await submitAuthPassword(authAccount.value.id, { password: authPassword.value })
-    ElMessage.success('密码已提交')
-    await loadAuthStatus(authAccount.value.id)
-  } catch (error) {
-    ElMessage.error(error.response?.data?.error || '提交密码失败')
-  } finally {
-    authLoading.value = false
   }
 }
 
