@@ -313,19 +313,11 @@ export class TelegramClient {
           await result.click();
           this.log(`   ✅ 点击搜索结果进入群组`);
           await this.page.waitForTimeout(2000);
-          
-          // 按 Escape 关闭搜索
-          await this.page.keyboard.press('Escape');
-          await this.page.waitForTimeout(500);
-          
           return true;
         }
       }
       
       this.log(`   ⚠️ 搜索结果中未找到匹配的群组`);
-      
-      // 按 Escape 关闭搜索
-      await this.page.keyboard.press('Escape');
       
       return false;
     } catch (e) {
