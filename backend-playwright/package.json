@@ -1,6 +1,6 @@
 {
   "name": "aibot-playwright-backend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Telegram AI 群营销工具 - Playwright 版本",
   "main": "dist/index.js",
   "scripts": {
