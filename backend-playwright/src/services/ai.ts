@@ -107,7 +107,7 @@ export class AIService {
     apiKey: string,
     model: string,
     systemPrompt: string,
-    messages: Array<{ text: string; images?: string[] }> | string,
+    messages: Array<{ text: string; images?: string[]; fromSelf?: boolean }> | string,
     baseUrl?: string | null,
     enableImages: boolean = false
   ): Promise<string> {
@@ -139,7 +139,8 @@ export class AIService {
             const imageInfo = msg.images && msg.images.length > 0 
               ? ` [包含${msg.images.length}张图片]` 
               : '';
-            return `[${idx + 1}] ${msg.text}${imageInfo}`;
+            const sender = msg.fromSelf ? '【我】' : '【群友】';
+            return `${sender} ${msg.text}${imageInfo}`;
           })
           .join('\n\n');
 
@@ -148,20 +149,19 @@ export class AIService {
           {
             type: 'text',
             text: `【群聊背景】
-以下是群里最近的对话记录，请作为背景资料整体理解：
+以下是群里最近的对话记录，【我】表示你自己之前说的话，【群友】表示其他人说的：
 
 ${formattedContent}
 ${realtimeSection}
 【回复要求】
-1. 先花3秒理解：大家在聊什么话题？氛围如何？图片在表达什么？
-2. 整体把握：不要逐句回应，要针对整个话题发表看法
+1. 先理解对话：大家在聊什么话题？你之前说了什么观点？
+2. 保持一致：你之前的观点要延续，不要自相矛盾！如果你之前看多，就继续看多；之前看空，就继续看空
 3. 自然表达：像真人聊天一样，不要说"根据上述"、"我觉得"等生硬开头
 4. 连贯完整：用1-3句话表达一个完整的观点，语义要连贯
 5. 融入氛围：根据你的人设风格，自然地参与讨论
-6. 如有图片：可以自然地提及图片内容，但不要生硬地说"我看到图片"
-7. 如果群里在讨论行情，可以参考实时数据自然地融入讨论
+6. 如果群里在讨论行情，可以参考实时数据，但要和你之前的观点保持一致
 
-现在，用你的风格说点什么：`
+现在，延续你之前的立场，用你的风格说点什么：`
           }
         ];
 
@@ -190,7 +190,10 @@ ${realtimeSection}
         // 纯文本模式
         if (Array.isArray(messages)) {
           formattedContent = messageArray
-            .map((msg, idx) => `[${idx + 1}] ${msg.text}`)
+            .map((msg) => {
+              const sender = msg.fromSelf ? '【我】' : '【群友】';
+              return `${sender} ${msg.text}`;
+            })
             .join('\n\n');
         } else {
           formattedContent = messages;
@@ -199,19 +202,19 @@ ${realtimeSection}
         apiMessages.push({
           role: 'user',
           content: `【群聊背景】
-以下是群里最近的对话记录，请作为背景资料整体理解：
+以下是群里最近的对话记录，【我】表示你自己之前说的话，【群友】表示其他人说的：
 
 ${formattedContent}
 ${realtimeSection}
 【回复要求】
-1. 先花3秒理解：大家在聊什么话题？氛围如何？
-2. 整体把握：不要逐句回应，要针对整个话题发表看法
+1. 先理解对话：大家在聊什么话题？你之前说了什么观点？
+2. 保持一致：你之前的观点要延续，不要自相矛盾！如果你之前看多，就继续看多；之前看空，就继续看空
 3. 自然表达：像真人聊天一样，不要说"根据上述"、"我觉得"等生硬开头
 4. 连贯完整：用1-3句话表达一个完整的观点，语义要连贯
 5. 融入氛围：根据你的人设风格，自然地参与讨论
-6. 如果群里在讨论行情，可以参考实时数据自然地融入讨论
+6. 如果群里在讨论行情，可以参考实时数据，但要和你之前的观点保持一致
 
-现在，用你的风格说点什么：`
+现在，延续你之前的立场，用你的风格说点什么：`
         });
       }
 
