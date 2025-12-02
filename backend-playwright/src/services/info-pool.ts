@@ -5,7 +5,7 @@
 
 import { PrismaClient } from '@prisma/client';
 
-// RSS解析器 - 简单实现，不依赖外部库
+// RSS/Atom 解析器 - 同时支持 RSS 和 Atom 格式
 async function parseRSS(url: string): Promise<Array<{
   title: string;
   content: string;
@@ -14,7 +14,12 @@ async function parseRSS(url: string): Promise<Array<{
   guid: string;
 }>> {
   try {
-    const response = await fetch(url);
+    // 添加 User-Agent 避免被拒绝
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ChatPartner/2.0)'
+      }
+    });
     const xml = await response.text();
     
     const items: Array<{
@@ -25,38 +30,83 @@ async function parseRSS(url: string): Promise<Array<{
       guid: string;
     }> = [];
     
-    // 简单的XML解析
-    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-    let match;
+    // 通用标签内容获取函数
+    const getTagContent = (xmlStr: string, tag: string): string => {
+      // 处理CDATA
+      const cdataMatch = xmlStr.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, 'i'));
+      if (cdataMatch) return cdataMatch[1].trim();
+      
+      const simpleMatch = xmlStr.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+      return simpleMatch ? simpleMatch[1].trim() : '';
+    };
     
-    while ((match = itemRegex.exec(xml)) !== null) {
-      const itemXml = match[1];
+    // 获取 link href 属性（Atom 格式）
+    const getLinkHref = (xmlStr: string): string => {
+      // 先尝试获取 alternate 链接
+      const alternateMatch = xmlStr.match(/<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["']/i);
+      if (alternateMatch) return alternateMatch[1];
       
-      const getTagContent = (tag: string): string => {
-        // 处理CDATA
-        const cdataMatch = itemXml.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, 'i'));
-        if (cdataMatch) return cdataMatch[1].trim();
+      // 再尝试获取普通链接
+      const hrefMatch = xmlStr.match(/<link[^>]*href=["']([^"']+)["']/i);
+      if (hrefMatch) return hrefMatch[1];
+      
+      // 最后尝试获取标签内容
+      return getTagContent(xmlStr, 'link');
+    };
+    
+    // 判断是 Atom 还是 RSS 格式
+    const isAtom = xml.includes('<feed') && xml.includes('<entry>');
+    
+    if (isAtom) {
+      // Atom 格式解析 (Reddit, GitHub 等使用)
+      const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
+      let match;
+      
+      while ((match = entryRegex.exec(xml)) !== null) {
+        const entryXml = match[1];
         
-        const simpleMatch = itemXml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
-        return simpleMatch ? simpleMatch[1].trim() : '';
-      };
+        const title = getTagContent(entryXml, 'title');
+        const content = getTagContent(entryXml, 'content') || getTagContent(entryXml, 'summary');
+        const link = getLinkHref(entryXml);
+        const pubDateStr = getTagContent(entryXml, 'published') || getTagContent(entryXml, 'updated');
+        const guid = getTagContent(entryXml, 'id') || link;
+        
+        if (title) {
+          items.push({
+            title,
+            content,
+            link,
+            pubDate: pubDateStr ? new Date(pubDateStr) : new Date(),
+            guid
+          });
+        }
+      }
+    } else {
+      // 标准 RSS 格式解析
+      const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+      let match;
       
-      const title = getTagContent('title');
-      const description = getTagContent('description');
-      const contentEncoded = getTagContent('content:encoded');
-      const link = getTagContent('link');
-      const pubDateStr = getTagContent('pubDate');
-      const guid = getTagContent('guid') || link;
-      
-      items.push({
-        title,
-        content: contentEncoded || description,
-        link,
-        pubDate: pubDateStr ? new Date(pubDateStr) : new Date(),
-        guid
-      });
+      while ((match = itemRegex.exec(xml)) !== null) {
+        const itemXml = match[1];
+        
+        const title = getTagContent(itemXml, 'title');
+        const description = getTagContent(itemXml, 'description');
+        const contentEncoded = getTagContent(itemXml, 'content:encoded');
+        const link = getTagContent(itemXml, 'link');
+        const pubDateStr = getTagContent(itemXml, 'pubDate');
+        const guid = getTagContent(itemXml, 'guid') || link;
+        
+        items.push({
+          title,
+          content: contentEncoded || description,
+          link,
+          pubDate: pubDateStr ? new Date(pubDateStr) : new Date(),
+          guid
+        });
+      }
     }
     
+    console.log(`[RSS] 解析完成: ${url} (${isAtom ? 'Atom' : 'RSS'}格式, ${items.length}条)`);
     return items;
   } catch (error) {
     console.error('RSS解析失败:', error);
