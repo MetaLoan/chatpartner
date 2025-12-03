@@ -117,8 +117,8 @@ async function parseRSS(url: string): Promise<Array<{
   }
 }
 
-// 获取加密货币价格
-async function fetchCryptoPrice(symbol: string): Promise<{
+// 获取加密货币价格（旧方法，用于 btc_price/eth_price 类型）
+async function fetchCryptoPriceLegacy(symbol: string): Promise<{
   price: number;
   change24h: number;
 } | null> {
