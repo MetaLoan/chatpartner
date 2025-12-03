@@ -539,20 +539,10 @@ export class TelegramClient {
     const messages = await this.readMessages();
     if (messages.length === 0) return;
 
-    // 临时调试：输出所有消息的 fromSelf 状态
-    if (messages.length > 0) {
-      this.log(`📋 读取到 ${messages.length} 条消息:`);
-      messages.forEach((msg, idx) => {
-        const preview = msg.text.substring(0, 30) + (msg.text.length > 30 ? '...' : '');
-        this.log(`   [${idx + 1}] ${msg.fromSelf ? '🟢 自己' : '🔵 他人'}: "${preview}"`);
-      });
-    }
-
     // 找到最新的非自身消息用于触发逻辑
     const latestIncoming = [...messages].reverse().find(msg => !msg.fromSelf);
     if (!latestIncoming) {
       // 只有自己刚发的消息，暂不处理
-      this.log(`⚠️ 没有检测到非自身消息，跳过回复（共${messages.length}条消息）`);
       return;
     }
 
