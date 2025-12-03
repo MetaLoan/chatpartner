@@ -223,13 +223,23 @@ export class InfoPoolService {
    * 拉取单个信息源的数据
    */
   async fetchSource(sourceId: number): Promise<void> {
-    const source = await this.prisma.infoSource.findUnique({
-      where: { id: sourceId }
-    });
-    
-    if (!source) return;
-    
     try {
+      const source = await this.prisma.infoSource.findUnique({
+        where: { id: sourceId }
+      });
+      
+      if (!source) {
+        console.error(`[fetchSource] 信息源 ${sourceId} 不存在`);
+        return;
+      }
+      
+      if (!source.enabled) {
+        console.log(`[${source.name}] 信息源已禁用，跳过拉取`);
+        return;
+      }
+      
+      console.log(`[${source.name}] 开始拉取数据，类型: ${source.type}`);
+      
       switch (source.type) {
         case 'rss':
           await this.fetchRSS(source);
@@ -241,9 +251,17 @@ export class InfoPoolService {
           await this.fetchPrice(source, 'ETH');
           break;
         case 'contract_image':
-          await this.fetchContractImage(source);
+          // 确保source包含必要的字段
+          if (source && typeof source === 'object' && 'id' in source && 'name' in source) {
+            console.log(`[${source.name}] 准备拉取晒单图，apiUrl: ${source.apiUrl}, tradepair: ${source.tradepair}`);
+            await this.fetchContractImage(source as any);
+          } else {
+            console.error(`[${source?.name || 'Unknown'}] 信息源数据不完整，无法拉取晒单图`);
+          }
           break;
         // manual_text 和 manual_image 不需要自动拉取
+        default:
+          console.log(`[${source.name}] 未知的信息源类型: ${source.type}`);
       }
       
       // 更新最后拉取时间
@@ -252,8 +270,12 @@ export class InfoPoolService {
         data: { lastFetchAt: new Date() }
       });
       
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[${source.name}] 拉取失败:`, error);
+      console.error(`[${source.name}] 错误详情:`, error?.message || error);
+      if (error?.stack) {
+        console.error(`[${source.name}] 错误堆栈:`, error.stack);
+      }
     }
   }
   
@@ -322,9 +344,16 @@ export class InfoPoolService {
     leverageOptions: string | null;
     openTimeRangeHours: number | null;
     cleanupHours: number | null;
+    [key: string]: any; // 允许其他字段
   }): Promise<void> {
+    // 参数验证
+    if (!source) {
+      console.error('[fetchContractImage] source 参数为空');
+      return;
+    }
+    
     if (!source.apiUrl || !source.tradepair) {
-      console.error(`[${source.name}] 缺少必要配置: apiUrl 或 tradepair`);
+      console.error(`[${source.name || 'Unknown'}] 缺少必要配置: apiUrl 或 tradepair`);
       return;
     }
 
@@ -476,14 +505,53 @@ export class InfoPoolService {
         const params = result.data.params;
         const parts: string[] = [];
         
-        if (params.opendate) parts.push(`开仓: ${params.opendate}`);
-        if (params.date) parts.push(`显示: ${params.date}`);
-        if (params.direction) parts.push(params.direction === 'long' ? '做多' : '做空');
-        if (params.lev) parts.push(`${params.lev}x`);
-        if (params.entprice) parts.push(`开仓价: ${params.entprice}`);
-        if (params.lastprice) parts.push(`最新价: ${params.lastprice}`);
-        if (params.yield) parts.push(`收益率: ${params.yield}`);
+        // 交易对（优先使用tradepair_display，否则使用tradepair）
+        if (params.tradepair_display) {
+          parts.push(`交易对: ${params.tradepair_display}`);
+        } else if (params.tradepair) {
+          parts.push(`交易对: ${params.tradepair}`);
+        } else if (source.tradepair) {
+          parts.push(`交易对: ${source.tradepair}`);
+        }
         
+        // 方向（优先使用direction_text，否则转换）
+        if (params.direction_text) {
+          parts.push(params.direction_text);
+        } else if (params.direction) {
+          parts.push(params.direction === 'long' ? '做多' : '做空');
+        }
+        
+        // 杠杆
+        if (params.lev) {
+          parts.push(`${params.lev}x`);
+        }
+        
+        // 开仓时间
+        if (params.opendate) {
+          parts.push(`开仓: ${params.opendate}`);
+        }
+        
+        // 显示时间
+        if (params.date) {
+          parts.push(`显示: ${params.date}`);
+        }
+        
+        // 开仓价
+        if (params.entprice) {
+          parts.push(`开仓价: ${params.entprice}`);
+        }
+        
+        // 最新价
+        if (params.lastprice) {
+          parts.push(`最新价: ${params.lastprice}`);
+        }
+        
+        // 收益率
+        if (params.yield) {
+          parts.push(`收益率: ${params.yield}`);
+        }
+        
+        // 如果提取到了参数信息，使用组合的标题
         if (parts.length > 0) {
           title = parts.join(' | ');
         }
@@ -509,8 +577,12 @@ export class InfoPoolService {
         await this.cleanupContractImages(source.id, source.cleanupHours);
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[${source.name}] 拉取晒单图失败:`, error);
+      console.error(`[${source.name}] 错误详情:`, error?.message || error);
+      if (error?.stack) {
+        console.error(`[${source.name}] 错误堆栈:`, error.stack);
+      }
     }
   }
 

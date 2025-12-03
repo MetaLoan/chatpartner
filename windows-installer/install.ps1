@@ -232,6 +232,221 @@ pause
 "@
 $stopScript | Out-File -FilePath "$INSTALL_DIR\停止ChatPartner.bat" -Encoding ASCII
 
+# 保存登录状态脚本
+$saveSessionScript = @"
+@echo off
+chcp 65001 >nul
+title ChatPartner - 保存登录状态
+color 0B
+
+echo.
+echo   ============================================
+echo      ChatPartner - 保存登录状态
+echo   ============================================
+echo.
+
+:: 获取脚本所在目录（项目根目录）
+set "PROJECT_DIR=%~dp0chatpartner"
+set "BACKEND_DIR=%PROJECT_DIR%\backend-playwright"
+set "SESSIONS_DIR=%BACKEND_DIR%\data\sessions"
+set "BACKUP_DIR=%BACKEND_DIR%\data\sessions_backup"
+
+:: 检查目录是否存在
+if not exist "%BACKEND_DIR%" (
+    echo [错误] 未找到项目目录: %BACKEND_DIR%
+    echo 请确保已正确安装 ChatPartner
+    echo.
+    pause
+    exit /b 1
+)
+
+:: 创建备份目录
+if not exist "%BACKUP_DIR%" (
+    mkdir "%BACKUP_DIR%"
+    echo ✅ 创建备份目录: %BACKUP_DIR%
+)
+
+:: 检查是否有session文件
+if not exist "%SESSIONS_DIR%" (
+    echo ℹ️  未找到session目录，可能还没有登录任何账号
+    echo.
+    pause
+    exit /b 0
+)
+
+:: 备份所有session文件
+echo 📦 正在备份登录状态...
+echo.
+
+setlocal enabledelayedexpansion
+set "BACKUP_COUNT=0"
+for /d %%d in ("%SESSIONS_DIR%\*") do (
+    set "SESSION_NAME=%%~nxd"
+    set "BACKUP_PATH=%BACKUP_DIR%\!SESSION_NAME!"
+    
+    :: 如果备份目录已存在，先删除
+    if exist "!BACKUP_PATH!" (
+        rd /s /q "!BACKUP_PATH!" 2>nul
+    )
+    
+    :: 复制session目录
+    xcopy /E /I /Y "%%d" "!BACKUP_PATH!\" >nul 2>&1
+    if !errorLevel! equ 0 (
+        echo   ✅ 已备份: !SESSION_NAME!
+        set /a BACKUP_COUNT+=1
+    ) else (
+        echo   ⚠️  备份失败: !SESSION_NAME!
+    )
+)
+
+:: 也备份单个session文件（兼容旧版本）
+for %%f in ("%SESSIONS_DIR%\*.session") do (
+    set "SESSION_FILE=%%~nxf"
+    copy /Y "%%f" "%BACKUP_DIR%\%SESSION_FILE%" >nul 2>&1
+    if !errorLevel! equ 0 (
+        echo   ✅ 已备份文件: !SESSION_FILE!
+        set /a BACKUP_COUNT+=1
+    )
+)
+
+echo.
+if %BACKUP_COUNT% gtr 0 (
+    echo ✅ 备份完成！共备份 %BACKUP_COUNT% 个登录状态
+    echo.
+    echo 📁 备份位置: %BACKUP_DIR%
+    echo.
+    echo 💡 提示: 下次启动时会自动恢复这些登录状态
+) else (
+    echo ℹ️  没有找到需要备份的登录状态
+)
+
+echo.
+pause
+"@
+$saveSessionScript | Out-File -FilePath "$INSTALL_DIR\保存登录状态.bat" -Encoding ASCII
+
+# 恢复登录状态脚本
+$restoreSessionScript = @"
+@echo off
+chcp 65001 >nul
+title ChatPartner - 恢复登录状态
+color 0B
+
+echo.
+echo   ============================================
+echo      ChatPartner - 恢复登录状态
+echo   ============================================
+echo.
+
+:: 获取脚本所在目录（项目根目录）
+set "PROJECT_DIR=%~dp0chatpartner"
+set "BACKEND_DIR=%PROJECT_DIR%\backend-playwright"
+set "SESSIONS_DIR=%BACKEND_DIR%\data\sessions"
+set "BACKUP_DIR=%BACKEND_DIR%\data\sessions_backup"
+
+:: 检查备份目录是否存在
+if not exist "%BACKUP_DIR%" (
+    echo ℹ️  未找到备份目录，可能还没有保存过登录状态
+    echo.
+    pause
+    exit /b 0
+)
+
+:: 确保session目录存在
+if not exist "%SESSIONS_DIR%" (
+    mkdir "%SESSIONS_DIR%"
+    echo ✅ 创建session目录: %SESSIONS_DIR%
+)
+
+:: 恢复所有session备份
+echo 📦 正在恢复登录状态...
+echo.
+
+setlocal enabledelayedexpansion
+set "RESTORE_COUNT=0"
+for /d %%d in ("%BACKUP_DIR%\*") do (
+    set "SESSION_NAME=%%~nxd"
+    set "TARGET_PATH=%SESSIONS_DIR%\!SESSION_NAME!"
+    
+    :: 如果目标目录已存在，先删除
+    if exist "!TARGET_PATH!" (
+        rd /s /q "!TARGET_PATH!" 2>nul
+    )
+    
+    :: 复制session目录
+    xcopy /E /I /Y "%%d" "!TARGET_PATH!\" >nul 2>&1
+    if !errorLevel! equ 0 (
+        echo   ✅ 已恢复: !SESSION_NAME!
+        set /a RESTORE_COUNT+=1
+    ) else (
+        echo   ⚠️  恢复失败: !SESSION_NAME!
+    )
+)
+
+:: 也恢复单个session文件（兼容旧版本）
+for %%f in ("%BACKUP_DIR%\*.session") do (
+    set "SESSION_FILE=%%~nxf"
+    copy /Y "%%f" "%SESSIONS_DIR%\%SESSION_FILE%" >nul 2>&1
+    if !errorLevel! equ 0 (
+        echo   ✅ 已恢复文件: !SESSION_FILE!
+        set /a RESTORE_COUNT+=1
+    )
+)
+
+echo.
+if %RESTORE_COUNT% gtr 0 (
+    echo ✅ 恢复完成！共恢复 %RESTORE_COUNT% 个登录状态
+) else (
+    echo ℹ️  没有找到需要恢复的登录状态
+)
+
+echo.
+pause
+"@
+$restoreSessionScript | Out-File -FilePath "$INSTALL_DIR\恢复登录状态.bat" -Encoding ASCII
+
+# 更新启动脚本，在启动前自动恢复登录状态
+$startScript = @"
+@echo off
+title ChatPartner v2.0
+cd /d "$projectDir"
+
+echo.
+echo   ====================================
+echo      ChatPartner v2.0 启动中...
+echo   ====================================
+echo.
+
+REM 自动恢复登录状态
+echo 📦 正在恢复登录状态...
+call "%~dp0恢复登录状态.bat" >nul 2>&1
+
+REM 启动后端
+start "ChatPartner Backend" cmd /k "cd backend-playwright && npm run dev"
+
+REM 等待后端启动
+timeout /t 5 /nobreak > nul
+
+REM 启动前端
+start "ChatPartner Frontend" cmd /k "cd frontend && npm run dev"
+
+REM 等待前端启动
+timeout /t 5 /nobreak > nul
+
+REM 打开浏览器
+start http://localhost:3000
+
+echo.
+echo   ✅ 服务已启动!
+echo   前端: http://localhost:3000
+echo   后端: http://localhost:8080
+echo.
+echo   💡 提示: 使用"保存登录状态.bat"可以备份所有登录状态
+echo.
+pause
+"@
+$startScript | Out-File -FilePath "$INSTALL_DIR\启动ChatPartner.bat" -Encoding ASCII
+
 Write-Host "   ✅ 启动脚本创建完成" -ForegroundColor Green
 
 # ============================================
