@@ -242,10 +242,15 @@ Recent messages in the group (for context understanding). [Me] = YOUR OWN previo
 ${formattedContent}
 ${realtimeSection}
 
-⚠️ CRITICAL: 
-1. Read your own messages carefully. Don't contradict yourself or ask about things you just said.
-2. You only need to reply to the LAST message from [Others] (the most recent one that's not from you).
-3. The earlier messages are just for context - don't respond to all of them, just the latest one.
+⚠️ CRITICAL RULES: 
+1. NEVER REPEAT what's already in the chat above - if someone said it, don't say it again word-for-word
+2. NEVER REPEAT your own previous messages - check [Me] carefully, don't say the same thing twice
+3. NEVER ECHO others' words - read what they said, then add something NEW and different
+4. Don't contradict yourself or ask about things you just said
+5. You only need to reply to the LAST message from [Others] (the most recent one that's not from you)
+6. The earlier messages are just for context - don't respond to all of them, just the latest one
+
+If you find yourself about to say something that's already in the chat, STOP and think of a different angle or just stay quiet.
 
 Stay consistent with your previous takes. Just reply naturally like you're texting:${passiveReplyHint}`
           : `【群聊背景】
@@ -253,6 +258,12 @@ Stay consistent with your previous takes. Just reply naturally like you're texti
 
 ${formattedContent}
 ${realtimeSection}
+【⚠️ 严禁重复规则】极其重要！
+1. 绝对不要重复上面对话中已经出现过的话，无论是谁说的
+2. 绝对不要重复【我】的内容，仔细检查你之前说过什么，不要说第二遍
+3. 绝对不要照抄【群友】的话，看他们说了什么，然后说点不一样的
+4. 如果你发现自己要说的话在上面已经出现过，立刻停止，换个角度或者干脆别说
+
 【重要】
 1. ⚠️ 仔细看【我】的消息，那是你自己说的！不要自相矛盾，不要质疑自己刚说的话
 2. ⚠️ 你只需要回复【群友】的最后一条消息（最新的非你自己的那条）
