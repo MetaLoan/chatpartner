@@ -177,11 +177,17 @@
         </el-form-item>
         
         <!-- 实时币价配置 -->
-        <el-form-item label="历史堆栈大小" v-if="sourceForm.type === 'crypto_price'">
+        <el-form-item v-if="sourceForm.type === 'crypto_price'">
+          <template #label>
+            <span>历史堆栈大小</span>
+          </template>
           <el-input-number v-model="sourceForm.history_size" :min="3" :max="20" />
           <span style="margin-left: 10px;">条（保留最近N条历史价格快照供AI分析趋势）</span>
         </el-form-item>
-        <el-form-item label="堆栈间隔时长" v-if="sourceForm.type === 'crypto_price'">
+        <el-form-item v-if="sourceForm.type === 'crypto_price'">
+          <template #label>
+            <span>堆栈间隔时长</span>
+          </template>
           <el-input-number v-model="sourceForm.history_interval" :min="1" :max="1440" />
           <span style="margin-left: 10px;">分钟（每隔N分钟记录一次价格快照到历史堆栈，同时也是价格更新频率）</span>
         </el-form-item>
@@ -681,6 +687,12 @@ const handleEditSource = (row) => {
     }
   }
   
+  // 对于 crypto_price 类型，history_interval 应该从 fetch_interval 计算（秒转分钟）
+  let historyInterval = row.history_interval || 30
+  if (row.type === 'crypto_price' && row.fetch_interval) {
+    historyInterval = Math.floor(row.fetch_interval / 60)
+  }
+  
   Object.assign(sourceForm, {
     name: row.name,
     type: row.type,
@@ -691,7 +703,7 @@ const handleEditSource = (row) => {
     open_time_range_hours: row.open_time_range_hours || 24,
     cleanup_hours: row.cleanup_hours || 48,
     history_size: row.history_size || 5,
-    history_interval: row.history_interval || 30,
+    history_interval: historyInterval,
     work_mode: row.work_mode,
     reusable: row.reusable,
     allow_same_account_reuse: row.allow_same_account_reuse || false,
