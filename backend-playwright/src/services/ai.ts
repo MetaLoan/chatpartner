@@ -144,11 +144,20 @@ export class AIService {
 
       // 获取实时市场数据
       const realtimeData = await getRealtimeContext();
-      const realtimeSection = realtimeData ? `\n\n${realtimeData}\n` : '';
+      const realtimeSection = realtimeData 
+        ? (groupLanguage === 'en-US' 
+            ? `\n\n【Real-time Market Data】\n${realtimeData}\n` 
+            : `\n\n【实时行情】\n${realtimeData}\n`)
+        : '';
+
+      // 如果是英文模式，添加强制提示
+      const languageReminder = groupLanguage === 'en-US' 
+        ? '[IMPORTANT: You must respond in English regardless of the language in the conversation below]\n\n'
+        : '';
 
       if (isMultiModal) {
         // 多模态模式：支持图片
-        formattedContent = messageArray
+        formattedContent = languageReminder + messageArray
           .map((msg, idx) => {
             const imageInfo = msg.images && msg.images.length > 0 
               ? ` [包含${msg.images.length}张图片]` 
@@ -212,14 +221,14 @@ ${realtimeSection}
       } else {
         // 纯文本模式
         if (Array.isArray(messages)) {
-          formattedContent = messageArray
+          formattedContent = languageReminder + messageArray
             .map((msg) => {
               const sender = msg.fromSelf ? '【我】' : '【群友】';
               return `${sender} ${msg.text}`;
             })
             .join('\n\n');
         } else {
-          formattedContent = messages;
+          formattedContent = languageReminder + messages;
         }
 
         apiMessages.push({

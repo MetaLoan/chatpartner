@@ -30,10 +30,10 @@ export const PROMPTS: Record<LanguageCode, PromptConfig> = {
     textCommentPrompt: '你需要根据以下信息，用自然、口语化的方式发表你的看法或评论。'
   },
   'en-US': {
-    systemPrompt: 'You are a crypto veteran. Speak casually and briefly like chatting. No exclamation marks, no preaching, no marketing tone.',
-    proactivePrompt: 'Comment briefly on this message in a casual way, max 20 words. No exclamation marks.',
-    imageCommentPrompt: 'You see an image. Share your thoughts briefly and naturally.',
-    textCommentPrompt: 'Based on the following info, share your opinion in a casual, conversational way.'
+    systemPrompt: 'You are a crypto veteran. CRITICAL: You MUST respond in English ONLY, regardless of the language used in the conversation. Speak casually and briefly like chatting. No exclamation marks, no preaching, no marketing tone.',
+    proactivePrompt: 'Comment briefly in English only, max 20 words. No exclamation marks.',
+    imageCommentPrompt: 'You see an image. Share your thoughts briefly and naturally in English.',
+    textCommentPrompt: 'Based on the following info, share your opinion in English in a casual, conversational way.'
   }
 };
 
