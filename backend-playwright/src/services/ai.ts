@@ -121,8 +121,23 @@ export class AIService {
 
       const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
-      // 如果账号没有自定义 systemPrompt，使用群组语言对应的默认提示词
-      const finalSystemPrompt = systemPrompt || getSystemPrompt(groupLanguage);
+      // 根据群组语言获取默认提示词
+      const defaultSystemPrompt = getSystemPrompt(groupLanguage);
+      
+      // 如果账号有自定义 systemPrompt 且与默认中文提示词不同，使用自定义的
+      // 否则使用群组语言对应的提示词
+      const defaultZhPrompt = getSystemPrompt('zh-CN');
+      let finalSystemPrompt = defaultSystemPrompt;
+      let promptSource = `group-language(${groupLanguage})`;
+      
+      if (systemPrompt && systemPrompt.trim() !== '' && systemPrompt !== defaultZhPrompt) {
+        // 账号有真正的自定义提示词（不是默认的中文提示词）
+        finalSystemPrompt = systemPrompt;
+        promptSource = 'account-custom';
+      }
+      
+      console.log(`🌐 [AI] 使用提示词来源: ${promptSource}, 语言: ${groupLanguage}`);
+      console.log(`📝 [AI] 提示词预览: ${finalSystemPrompt.substring(0, 50)}...`);
       
       if (finalSystemPrompt) {
         apiMessages.push({ role: 'system', content: finalSystemPrompt });
