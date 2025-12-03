@@ -129,7 +129,8 @@ router.post('/sources', async (req: Request, res: Response) => {
         cleanupHours: cleanup_hours,
         historySize: history_size || 5,
         historyInterval: history_interval || 30,
-        fetchInterval: fetch_interval || (type === 'crypto_price' ? 60 : 300),
+        // crypto_price 类型的 fetchInterval 等于 historyInterval（秒）
+        fetchInterval: type === 'crypto_price' ? (history_interval || 30) * 60 : (fetch_interval || 300),
         workMode: work_mode || 'comment',
         reusable: reusable || false,
         allowSameAccountReuse: allow_same_account_reuse || false,

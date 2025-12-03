@@ -65,31 +65,17 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
         const change24h = parseFloat(data.priceChangePercent || '0');
         const now = new Date();
 
-        // 检查是否需要记录历史价格（根据间隔时长）
-        const lastHistory = await prisma.cryptoPriceHistory.findFirst({
-          where: { sourceId: source.id, symbol: symbolStr },
-          orderBy: { timestamp: 'desc' }
+        // 每次拉取都记录历史价格（因为 fetchInterval = historyInterval）
+        await prisma.cryptoPriceHistory.create({
+          data: {
+            sourceId: source.id,
+            symbol: symbolStr,
+            price,
+            change24h,
+            timestamp: now
+          }
         });
-
-        let shouldRecordHistory = true;
-        if (lastHistory) {
-          const minutesSinceLastRecord = (now.getTime() - lastHistory.timestamp.getTime()) / 1000 / 60;
-          shouldRecordHistory = minutesSinceLastRecord >= historyInterval;
-        }
-
-        // 如果满足间隔，记录新的历史价格
-        if (shouldRecordHistory) {
-          await prisma.cryptoPriceHistory.create({
-            data: {
-              sourceId: source.id,
-              symbol: symbolStr,
-              price,
-              change24h,
-              timestamp: now
-            }
-          });
-          console.log(`[${source.name}] ${symbolStr}: 已记录历史价格快照`);
-        }
+        console.log(`[${source.name}] ${symbolStr}: 已记录历史价格快照`);
 
         // 获取所有历史记录（最多 historySize 条）
         const histories = await prisma.cryptoPriceHistory.findMany({
