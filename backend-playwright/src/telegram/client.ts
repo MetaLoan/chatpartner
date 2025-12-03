@@ -666,7 +666,8 @@ export class TelegramClient {
         contextMessages,
         this.account.aiApiBaseUrl,
         shouldProcessImages,
-        groupLanguage
+        groupLanguage,
+        true  // isPassiveReply=true，被动回复模式
       );
 
       if (reply) {

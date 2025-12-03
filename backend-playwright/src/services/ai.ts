@@ -111,7 +111,8 @@ export class AIService {
     messages: Array<{ text: string; images?: string[]; fromSelf?: boolean }> | string,
     baseUrl?: string | null,
     enableImages: boolean = false,
-    groupLanguage: LanguageCode = 'zh-CN'
+    groupLanguage: LanguageCode = 'zh-CN',
+    isPassiveReply: boolean = false  // 新增：标识是否为被动回复
   ): Promise<string> {
     try {
       const openai = new OpenAI({
@@ -226,14 +227,20 @@ ${realtimeSection}
           formattedContent = languageReminder + messages;
         }
 
-        // 根据语言选择不同的上下文提示
+        // 根据语言和回复类型选择不同的上下文提示
+        const passiveReplyHint = isPassiveReply 
+          ? (groupLanguage === 'en-US'
+            ? '\n⚠️ IMPORTANT: If someone mentions a coin name in the chat, DON\'T repeat the coin name in your reply - they already know what coin they\'re talking about. Just give your take on it.'
+            : '\n⚠️ 重要：如果对话中已经提到了某个币的名字，你回复时不要再重复说币名，大家都知道在聊什么币，直接发表看法就行。')
+          : '';
+        
         const contextPrompt = groupLanguage === 'en-US' 
           ? `[Chat Context]
 Recent messages in the group. [Me] = your previous messages, [Others] = other people:
 
 ${formattedContent}
 ${realtimeSection}
-Stay consistent with your previous takes. Just reply naturally like you're texting:`
+Stay consistent with your previous takes. Just reply naturally like you're texting:${passiveReplyHint}`
           : `【群聊背景】
 以下是群里最近的对话记录，【我】表示你自己之前说的话，【群友】表示其他人说的：
 
@@ -256,7 +263,7 @@ ${realtimeSection}
 ✅ "不好说"
 ✅ "看着挺猛"
 
-用最简单的大白话回复：`;
+用最简单的大白话回复：${passiveReplyHint}`;
 
         apiMessages.push({
           role: 'user',
