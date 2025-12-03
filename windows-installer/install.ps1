@@ -186,176 +186,7 @@ Write-Host "   ✅ 前端依赖安装完成" -ForegroundColor Green
 # ============================================
 Write-Host "📝 创建启动脚本..." -ForegroundColor Yellow
 
-# Stop script
-$stopScript = @"
-@echo off
-echo Stopping ChatPartner services...
-taskkill /f /im node.exe 2>nul
-echo Services stopped
-pause
-"@
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText("$INSTALL_DIR\StopChatPartner.bat", $stopScript, $utf8NoBom)
-
-# Save session script
-$saveSessionScript = @"
-@echo off
-title ChatPartner - Save Login Sessions
-color 0B
-
-echo.
-echo   ============================================
-echo      ChatPartner - Save Login Sessions
-echo   ============================================
-echo.
-
-set "PROJECT_DIR=%~dp0chatpartner"
-set "BACKEND_DIR=%PROJECT_DIR%\backend-playwright"
-set "SESSIONS_DIR=%BACKEND_DIR%\data\sessions"
-set "BACKUP_DIR=%BACKEND_DIR%\data\sessions_backup"
-
-if not exist "%BACKEND_DIR%" (
-    echo [Error] Project directory not found: %BACKEND_DIR%
-    echo Please ensure ChatPartner is installed correctly
-    echo.
-    pause
-    exit /b 1
-)
-
-if not exist "%BACKUP_DIR%" (
-    mkdir "%BACKUP_DIR%"
-    echo Backup directory created: %BACKUP_DIR%
-)
-
-if not exist "%SESSIONS_DIR%" (
-    echo No session directory found, may not have logged in any accounts yet
-    echo.
-    pause
-    exit /b 0
-)
-
-echo Backing up login sessions...
-echo.
-
-setlocal enabledelayedexpansion
-set "BACKUP_COUNT=0"
-for /d %%d in ("%SESSIONS_DIR%\*") do (
-    set "SESSION_NAME=%%~nxd"
-    set "BACKUP_PATH=%BACKUP_DIR%\!SESSION_NAME!"
-    
-    if exist "!BACKUP_PATH!" (
-        rd /s /q "!BACKUP_PATH!" 2>nul
-    )
-    
-    xcopy /E /I /Y "%%d" "!BACKUP_PATH!\" >nul 2>&1
-    if !errorLevel! equ 0 (
-        echo   Backed up: !SESSION_NAME!
-        set /a BACKUP_COUNT+=1
-    ) else (
-        echo   Backup failed: !SESSION_NAME!
-    )
-)
-
-for %%f in ("%SESSIONS_DIR%\*.session") do (
-    set "SESSION_FILE=%%~nxf"
-    copy /Y "%%f" "%BACKUP_DIR%\%SESSION_FILE%" >nul 2>&1
-    if !errorLevel! equ 0 (
-        echo   Backed up file: !SESSION_FILE!
-        set /a BACKUP_COUNT+=1
-    )
-)
-
-echo.
-if %BACKUP_COUNT% gtr 0 (
-    echo Backup completed! Total: %BACKUP_COUNT% sessions
-    echo.
-    echo Backup location: %BACKUP_DIR%
-    echo.
-    echo Tip: Sessions will be automatically restored on next startup
-) else (
-    echo No sessions found to backup
-)
-
-echo.
-pause
-"@
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText("$INSTALL_DIR\SaveSessions.bat", $saveSessionScript, $utf8NoBom)
-
-# Restore session script
-$restoreSessionScript = @"
-@echo off
-title ChatPartner - Restore Login Sessions
-color 0B
-
-echo.
-echo   ============================================
-echo      ChatPartner - Restore Login Sessions
-echo   ============================================
-echo.
-
-set "PROJECT_DIR=%~dp0chatpartner"
-set "BACKEND_DIR=%PROJECT_DIR%\backend-playwright"
-set "SESSIONS_DIR=%BACKEND_DIR%\data\sessions"
-set "BACKUP_DIR=%BACKEND_DIR%\data\sessions_backup"
-
-if not exist "%BACKUP_DIR%" (
-    echo No backup directory found, may not have saved sessions yet
-    echo.
-    pause
-    exit /b 0
-)
-
-if not exist "%SESSIONS_DIR%" (
-    mkdir "%SESSIONS_DIR%"
-    echo Session directory created: %SESSIONS_DIR%
-)
-
-echo Restoring login sessions...
-echo.
-
-setlocal enabledelayedexpansion
-set "RESTORE_COUNT=0"
-for /d %%d in ("%BACKUP_DIR%\*") do (
-    set "SESSION_NAME=%%~nxd"
-    set "TARGET_PATH=%SESSIONS_DIR%\!SESSION_NAME!"
-    
-    if exist "!TARGET_PATH!" (
-        rd /s /q "!TARGET_PATH!" 2>nul
-    )
-    
-    xcopy /E /I /Y "%%d" "!TARGET_PATH!\" >nul 2>&1
-    if !errorLevel! equ 0 (
-        echo   Restored: !SESSION_NAME!
-        set /a RESTORE_COUNT+=1
-    ) else (
-        echo   Restore failed: !SESSION_NAME!
-    )
-)
-
-for %%f in ("%BACKUP_DIR%\*.session") do (
-    set "SESSION_FILE=%%~nxf"
-    copy /Y "%%f" "%SESSIONS_DIR%\%SESSION_FILE%" >nul 2>&1
-    if !errorLevel! equ 0 (
-        echo   Restored file: !SESSION_FILE!
-        set /a RESTORE_COUNT+=1
-    )
-)
-
-echo.
-if %RESTORE_COUNT% gtr 0 (
-    echo Restore completed! Total: %RESTORE_COUNT% sessions
-) else (
-    echo No sessions found to restore
-)
-
-echo.
-pause
-"@
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText("$INSTALL_DIR\RestoreSessions.bat", $restoreSessionScript, $utf8NoBom)
-
-# Start script with auto-restore sessions
+# 启动脚本
 $startScript = @"
 @echo off
 title ChatPartner v2.0
@@ -363,41 +194,43 @@ cd /d "$projectDir"
 
 echo.
 echo   ====================================
-echo      ChatPartner v2.0 Starting...
+echo      ChatPartner v2.0 启动中...
 echo   ====================================
 echo.
 
-REM Auto-restore login sessions
-echo Restoring login sessions...
-call "%~dp0RestoreSessions.bat" >nul 2>&1
+REM 启动后端
+start "ChatPartner Backend" cmd /k "cd backend-playwright && npm run dev"
 
-REM Start backend
-start /D "%~dp0chatpartner\backend-playwright" cmd /k npm run dev
-
-REM Wait for backend
+REM 等待后端启动
 timeout /t 5 /nobreak > nul
 
-REM Start frontend
-start /D "%~dp0chatpartner\frontend" cmd /k npm run dev
+REM 启动前端
+start "ChatPartner Frontend" cmd /k "cd frontend && npm run dev"
 
-REM Wait for frontend
+REM 等待前端启动
 timeout /t 5 /nobreak > nul
 
-REM Open browser
+REM 打开浏览器
 start http://localhost:3000
 
 echo.
-echo   Services started!
-echo   Frontend: http://localhost:3000
-echo   Backend: http://localhost:8080
-echo.
-echo   Tip: Use SaveSessions.bat to backup all login sessions
+echo   ✅ 服务已启动!
+echo   前端: http://localhost:3000
+echo   后端: http://localhost:8080
 echo.
 pause
 "@
-# Use ASCII encoding to avoid any encoding issues
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText("$INSTALL_DIR\StartChatPartner.bat", $startScript, $utf8NoBom)
+$startScript | Out-File -FilePath "$INSTALL_DIR\启动ChatPartner.bat" -Encoding ASCII
+
+# 停止脚本
+$stopScript = @"
+@echo off
+echo 正在停止 ChatPartner 服务...
+taskkill /f /im node.exe 2>nul
+echo ✅ 服务已停止
+pause
+"@
+$stopScript | Out-File -FilePath "$INSTALL_DIR\停止ChatPartner.bat" -Encoding ASCII
 
 Write-Host "   ✅ 启动脚本创建完成" -ForegroundColor Green
 
@@ -407,7 +240,7 @@ Write-Host "   ✅ 启动脚本创建完成" -ForegroundColor Green
 Write-Host "🖥️ 创建桌面快捷方式..." -ForegroundColor Yellow
 $WshShell = New-Object -comObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\ChatPartner.lnk")
-$Shortcut.TargetPath = "$INSTALL_DIR\StartChatPartner.bat"
+$Shortcut.TargetPath = "$INSTALL_DIR\启动ChatPartner.bat"
 $Shortcut.WorkingDirectory = $INSTALL_DIR
 $Shortcut.Description = "ChatPartner AI 群营销助手"
 $Shortcut.Save()
