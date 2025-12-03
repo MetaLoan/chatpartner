@@ -96,6 +96,7 @@ accountRoutes.get('/', async (req: Request, res: Response) => {
 // 保存所有登录状态（必须在 /:id 路由之前定义）
 accountRoutes.post('/save-sessions', async (req: Request, res: Response) => {
   const prisma: PrismaClient = req.app.get('prisma');
+  const manager: TelegramManager = req.app.get('telegramManager');
   
   try {
     const SESSION_DIR = process.env.SESSION_DIR || path.join(process.cwd(), 'data', 'sessions');
@@ -105,12 +106,13 @@ accountRoutes.post('/save-sessions', async (req: Request, res: Response) => {
       fs.mkdirSync(SESSION_DIR, { recursive: true });
     }
     
-    // 获取所有账号
+    // 获取所有账号（包含status用于判断是否在线）
     const accounts = await prisma.account.findMany({
       select: {
         id: true,
         phoneNumber: true,
-        sessionPath: true
+        sessionPath: true,
+        status: true
       }
     });
     
@@ -120,6 +122,7 @@ accountRoutes.post('/save-sessions', async (req: Request, res: Response) => {
       success: boolean;
       message: string;
       sessionPath?: string;
+      refreshed?: boolean;
     }> = [];
     
     let totalBackedUp = 0;
@@ -127,111 +130,199 @@ accountRoutes.post('/save-sessions', async (req: Request, res: Response) => {
     let totalFailed = 0;
     
     for (const account of accounts) {
-      // 获取session文件路径
-      let sessionPath: string;
-      if (account.sessionPath) {
-        sessionPath = account.sessionPath;
-        if (!path.isAbsolute(sessionPath)) {
-          sessionPath = path.resolve(process.cwd(), sessionPath);
-        }
-      } else {
-        // 使用默认路径
-        const phoneNumberClean = account.phoneNumber.replace(/\+/g, '');
-        sessionPath = path.join(SESSION_DIR, `${phoneNumberClean}.json`);
+      // 确定目标路径（登录目录）
+      const phoneNumberClean = account.phoneNumber.replace(/\+/g, '');
+      const targetPath = path.resolve(process.cwd(), SESSION_DIR, `${phoneNumberClean}.json`);
+      
+      // 确保目标目录存在
+      const targetDir = path.dirname(targetPath);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
       }
       
-      // 检查session文件是否存在且有效
-      if (!fs.existsSync(sessionPath)) {
-        results.push({
-          accountId: account.id,
-          phoneNumber: account.phoneNumber,
-          success: false,
-          message: 'Session file not found',
-          sessionPath
-        });
-        totalSkipped++;
-        continue;
-      }
-      
-      // 检查文件大小
-      const stats = fs.statSync(sessionPath);
-      if (stats.size === 0) {
-        results.push({
-          accountId: account.id,
-          phoneNumber: account.phoneNumber,
-          success: false,
-          message: 'Session file is empty',
-          sessionPath
-        });
-        totalSkipped++;
-        continue;
-      }
-      
-      // 尝试解析JSON验证文件有效性
-      try {
-        const content = fs.readFileSync(sessionPath, 'utf-8');
-        JSON.parse(content); // 验证JSON格式
-      } catch (parseError) {
-        results.push({
-          accountId: account.id,
-          phoneNumber: account.phoneNumber,
-          success: false,
-          message: 'Session file is invalid JSON',
-          sessionPath
-        });
-        totalSkipped++;
-        continue;
-      }
-      
-      // 保存session文件到登录目录（如果session文件不在登录目录，则复制过去）
-      try {
-        const phoneNumberClean = account.phoneNumber.replace(/\+/g, '');
-        const targetPath = path.join(SESSION_DIR, `${phoneNumberClean}.json`);
-        
-        // 如果session文件已经在登录目录，跳过
-        if (sessionPath === targetPath) {
+      // 如果账号在线，直接从浏览器context获取并覆盖保存到目标路径
+      if (account.status === 'online') {
+        const client = manager.getClient(account.id);
+        if (client) {
+          try {
+            // 直接从浏览器context获取session并保存到目标路径（覆盖）
+            const refreshed = await client.refreshSession(targetPath);
+            if (refreshed) {
+              // 验证文件有效性
+              if (fs.existsSync(targetPath)) {
+                const stats = fs.statSync(targetPath);
+                if (stats.size > 0) {
+                  try {
+                    const content = fs.readFileSync(targetPath, 'utf-8');
+                    JSON.parse(content);
+                    
+                    results.push({
+                      accountId: account.id,
+                      phoneNumber: account.phoneNumber,
+                      success: true,
+                      message: 'Saved from browser context',
+                      sessionPath: targetPath,
+                      refreshed: true
+                    });
+                    totalBackedUp++;
+                    continue;
+                  } catch (parseError) {
+                    results.push({
+                      accountId: account.id,
+                      phoneNumber: account.phoneNumber,
+                      success: false,
+                      message: 'Session file is invalid JSON',
+                      sessionPath: targetPath
+                    });
+                    totalFailed++;
+                    continue;
+                  }
+                } else {
+                  results.push({
+                    accountId: account.id,
+                    phoneNumber: account.phoneNumber,
+                    success: false,
+                    message: 'Session file is empty',
+                    sessionPath: targetPath
+                  });
+                  totalFailed++;
+                  continue;
+                }
+              } else {
+                results.push({
+                  accountId: account.id,
+                  phoneNumber: account.phoneNumber,
+                  success: false,
+                  message: 'Failed to save session from browser context',
+                  sessionPath: targetPath
+                });
+                totalFailed++;
+                continue;
+              }
+            } else {
+              results.push({
+                accountId: account.id,
+                phoneNumber: account.phoneNumber,
+                success: false,
+                message: 'Unable to get session from browser context',
+                sessionPath: targetPath
+              });
+              totalFailed++;
+              continue;
+            }
+          } catch (refreshError: any) {
+            results.push({
+              accountId: account.id,
+              phoneNumber: account.phoneNumber,
+              success: false,
+              message: `Failed to get session from browser: ${refreshError.message}`,
+              sessionPath: targetPath
+            });
+            totalFailed++;
+            continue;
+          }
+        } else {
           results.push({
             accountId: account.id,
             phoneNumber: account.phoneNumber,
-            success: true,
-            message: 'Already in sessions directory',
-            sessionPath
+            success: false,
+            message: 'Account is online but client not found',
+            sessionPath: targetPath
           });
-          totalBackedUp++;
+          totalFailed++;
+          continue;
+        }
+      } else {
+        // 账号离线，尝试使用现有的session文件
+        let sessionPath: string;
+        if (account.sessionPath) {
+          sessionPath = account.sessionPath;
+          if (!path.isAbsolute(sessionPath)) {
+            sessionPath = path.resolve(process.cwd(), sessionPath);
+          }
+        } else {
+          sessionPath = targetPath;
+        }
+        
+        // 检查文件是否存在且有效
+        if (!fs.existsSync(sessionPath)) {
+          results.push({
+            accountId: account.id,
+            phoneNumber: account.phoneNumber,
+            success: false,
+            message: 'Session file not found (account is offline)',
+            sessionPath: targetPath
+          });
+          totalSkipped++;
           continue;
         }
         
-        // 如果目标文件已存在，先删除
-        if (fs.existsSync(targetPath)) {
-          fs.unlinkSync(targetPath);
+        // 检查文件大小
+        const stats = fs.statSync(sessionPath);
+        if (stats.size === 0) {
+          results.push({
+            accountId: account.id,
+            phoneNumber: account.phoneNumber,
+            success: false,
+            message: 'Session file is empty',
+            sessionPath
+          });
+          totalSkipped++;
+          continue;
         }
         
-        // 复制文件到登录目录
-        fs.copyFileSync(sessionPath, targetPath);
+        // 验证JSON格式
+        try {
+          const content = fs.readFileSync(sessionPath, 'utf-8');
+          JSON.parse(content);
+        } catch (parseError) {
+          results.push({
+            accountId: account.id,
+            phoneNumber: account.phoneNumber,
+            success: false,
+            message: 'Session file is invalid JSON',
+            sessionPath
+          });
+          totalSkipped++;
+          continue;
+        }
         
-        // 更新数据库中的sessionPath
+        // 如果文件不在目标路径，复制过去
+        if (sessionPath !== targetPath) {
+          try {
+            if (fs.existsSync(targetPath)) {
+              fs.unlinkSync(targetPath);
+            }
+            fs.copyFileSync(sessionPath, targetPath);
+          } catch (copyError: any) {
+            results.push({
+              accountId: account.id,
+              phoneNumber: account.phoneNumber,
+              success: false,
+              message: `Failed to copy session file: ${copyError.message}`,
+              sessionPath
+            });
+            totalFailed++;
+            continue;
+          }
+        }
+        
+        // 更新数据库
+        const relativePath = path.relative(process.cwd(), targetPath);
         await prisma.account.update({
           where: { id: account.id },
-          data: { sessionPath: targetPath }
+          data: { sessionPath: relativePath.startsWith('..') ? targetPath : relativePath }
         });
         
         results.push({
           accountId: account.id,
           phoneNumber: account.phoneNumber,
           success: true,
-          message: 'Saved to sessions directory successfully',
-          sessionPath: targetPath
+          message: 'Saved from existing session file',
+          sessionPath: targetPath,
+          refreshed: false
         });
         totalBackedUp++;
-      } catch (saveError: any) {
-        results.push({
-          accountId: account.id,
-          phoneNumber: account.phoneNumber,
-          success: false,
-          message: `Save failed: ${saveError.message}`,
-          sessionPath
-        });
-        totalFailed++;
       }
     }
     

@@ -372,7 +372,8 @@
               </div>
             </div>
             <div style="margin-top: 5px; font-size: 12px; color: #909399;">
-              {{ result.message === 'Backed up successfully' ? '已保存到登录目录' : result.message === 'Already in sessions directory' ? '已在登录目录' : result.message }}
+              <span v-if="result.refreshed" style="color: #67c23a; margin-right: 5px;">🔄 已刷新</span>
+              {{ result.message === 'Refreshed and saved to sessions directory' ? '已刷新并保存到登录目录' : result.message === 'Saved to sessions directory successfully' ? '已保存到登录目录' : result.message === 'Already in sessions directory' ? '已在登录目录' : result.message }}
             </div>
             <div v-if="result.sessionPath" style="margin-top: 5px; font-size: 11px; color: #606266; word-break: break-all;">
               <code>{{ result.sessionPath }}</code>

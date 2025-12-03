@@ -1077,6 +1077,58 @@ export class TelegramClient {
   /**
    * 停止客户端
    */
+  /**
+   * 强制刷新并保存当前登录状态
+   * 即使原session文件不存在，也能从浏览器context中创建新文件
+   */
+  async refreshSession(targetPath?: string): Promise<boolean> {
+    // 检查浏览器context是否存在（即使status不是online，只要context存在就可以刷新）
+    if (!this.context) {
+      this.log(`⚠️ 浏览器context不存在，无法刷新session`);
+      return false;
+    }
+
+    // 检查是否真的已登录（通过检查页面状态）
+    try {
+      const isLoggedIn = await this.checkLoginStatus();
+      if (!isLoggedIn) {
+        this.log(`⚠️ 账号未登录，无法刷新session`);
+        return false;
+      }
+    } catch (error) {
+      this.logError('检查登录状态失败:', error);
+      return false;
+    }
+
+    try {
+      // 如果指定了目标路径，使用目标路径；否则使用默认路径
+      let sessionPath = targetPath || this.account.sessionPath || this.getSessionPath();
+      if (!path.isAbsolute(sessionPath)) {
+        sessionPath = path.resolve(process.cwd(), sessionPath);
+      }
+
+      // 确保目录存在
+      const sessionDir = path.dirname(sessionPath);
+      fs.mkdirSync(sessionDir, { recursive: true });
+
+      // 强制刷新session（即使原文件不存在也会创建新文件，覆盖保存）
+      await this.context.storageState({ path: sessionPath });
+      this.log(`💾 会话已刷新: ${sessionPath}`);
+
+      // 更新数据库（保存相对路径）
+      const relativePath = path.relative(process.cwd(), sessionPath);
+      await this.prisma.account.update({
+        where: { id: this.account.id },
+        data: { sessionPath: relativePath.startsWith('..') ? sessionPath : relativePath }
+      });
+
+      return true;
+    } catch (error) {
+      this.logError('刷新会话失败:', error);
+      return false;
+    }
+  }
+
   async stop(): Promise<void> {
     this.log(`🛑 停止客户端 [账号: ${this.account.phoneNumber}]`);
     this.isRunning = false;
