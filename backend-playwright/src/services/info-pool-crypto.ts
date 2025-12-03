@@ -23,9 +23,12 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
     console.log(`[${source.name}] 开始拉取 ${symbols.length} 个币种的价格`);
 
     for (const symbol of symbols) {
-      const binanceSymbol = getBinanceSymbol(symbol);
+      // 确保 symbol 是字符串
+      const symbolStr = typeof symbol === 'string' ? symbol : String(symbol);
+      
+      const binanceSymbol = getBinanceSymbol(symbolStr);
       if (!binanceSymbol) {
-        console.log(`[${source.name}] 跳过不支持的币种: ${symbol}`);
+        console.log(`[${source.name}] 跳过不支持的币种: ${symbolStr}`);
         continue;
       }
 
@@ -57,7 +60,7 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
 
         // 检查是否需要记录历史价格（根据间隔时长）
         const lastHistory = await prisma.cryptoPriceHistory.findFirst({
-          where: { sourceId: source.id, symbol },
+          where: { sourceId: source.id, symbol: symbolStr },
           orderBy: { timestamp: 'desc' }
         });
 
@@ -72,18 +75,18 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
           await prisma.cryptoPriceHistory.create({
             data: {
               sourceId: source.id,
-              symbol,
+              symbol: symbolStr,
               price,
               change24h,
               timestamp: now
             }
           });
-          console.log(`[${source.name}] ${symbol}: 已记录历史价格快照`);
+          console.log(`[${source.name}] ${symbolStr}: 已记录历史价格快照`);
         }
 
         // 获取所有历史记录（最多 historySize 条）
         const histories = await prisma.cryptoPriceHistory.findMany({
-          where: { sourceId: source.id, symbol },
+          where: { sourceId: source.id, symbol: symbolStr },
           orderBy: { timestamp: 'desc' },
           take: historySize
         });
@@ -91,7 +94,7 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
         // 清理超出堆栈大小的旧记录
         if (histories.length === historySize) {
           const oldRecords = await prisma.cryptoPriceHistory.findMany({
-            where: { sourceId: source.id, symbol },
+            where: { sourceId: source.id, symbol: symbolStr },
             orderBy: { timestamp: 'desc' },
             skip: historySize
           });
@@ -139,7 +142,7 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
         });
 
         // 生成内容
-        const content = `${symbol} 当前价格: $${price.toLocaleString()}
+        const content = `${symbolStr} 当前价格: $${price.toLocaleString()}
 
 更新日期：${updateDate}
 
@@ -149,13 +152,13 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
 
 （${histories.length}堆栈，间隔${historyInterval}分钟）历史价格: ${historyText}`;
 
-        const title = `${symbol} ${change24h >= 0 ? '📈' : '📉'} $${price.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`;
+        const title = `${symbolStr} ${change24h >= 0 ? '📈' : '📉'} $${price.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`;
 
         // 创建或更新 InfoItem（每次都更新当前价格，即使不记录历史）
         const existing = await prisma.infoItem.findFirst({
           where: {
             sourceId: source.id,
-            title: { contains: symbol }
+            title: { contains: symbolStr }
           }
         });
 
@@ -182,10 +185,10 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
           });
         }
 
-        console.log(`[${source.name}] ${symbol}: $${price.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`);
+        console.log(`[${source.name}] ${symbolStr}: $${price.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`);
 
       } catch (error: any) {
-        console.error(`[${source.name}] 获取 ${symbol} 价格失败:`, error.message);
+        console.error(`[${source.name}] 获取 ${symbolStr} 价格失败:`, error.message);
       }
     }
 
