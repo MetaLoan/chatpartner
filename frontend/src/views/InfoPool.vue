@@ -240,6 +240,9 @@
           <el-input-number v-model="sourceForm.fetch_interval" :min="20" :max="86400" />
           <span style="margin-left: 10px;">秒（建议20-50秒）</span>
         </el-form-item>
+        <el-alert v-if="sourceForm.type === 'crypto_price'" type="warning" :closable="false" style="margin-bottom: 15px;">
+          注意：实时币价的拉取间隔自动等于堆栈间隔时长
+        </el-alert>
         <el-form-item label="过期时间">
           <el-input-number v-model="sourceForm.expire_hours" :min="0" :max="720" />
           <span style="margin-left: 10px;">小时 (0表示不过期)</span>
@@ -687,6 +690,8 @@ const handleEditSource = (row) => {
     leverage_options: leverageOptions,
     open_time_range_hours: row.open_time_range_hours || 24,
     cleanup_hours: row.cleanup_hours || 48,
+    history_size: row.history_size || 5,
+    history_interval: row.history_interval || 30,
     work_mode: row.work_mode,
     reusable: row.reusable,
     allow_same_account_reuse: row.allow_same_account_reuse || false,

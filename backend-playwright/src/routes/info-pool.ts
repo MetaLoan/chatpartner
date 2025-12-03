@@ -159,8 +159,8 @@ router.put('/sources/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const { 
-      name, rss_url, price_api_url, api_url, tradepair, leverage_options,
-      open_time_range_hours, cleanup_hours, fetch_interval, 
+      type, name, rss_url, price_api_url, api_url, tradepair, leverage_options,
+      open_time_range_hours, cleanup_hours, fetch_interval, history_size, history_interval,
       work_mode, reusable, allow_same_account_reuse, expire_hours, enabled 
     } = req.body;
     
@@ -182,7 +182,16 @@ router.put('/sources/:id', async (req: Request, res: Response) => {
     }
     if (open_time_range_hours !== undefined) updateData.openTimeRangeHours = open_time_range_hours;
     if (cleanup_hours !== undefined) updateData.cleanupHours = cleanup_hours;
-    if (fetch_interval !== undefined) updateData.fetchInterval = fetch_interval;
+    if (history_size !== undefined) updateData.historySize = history_size;
+    if (history_interval !== undefined) updateData.historyInterval = history_interval;
+    
+    // 处理 fetchInterval：crypto_price 类型自动计算，其他类型使用传入值
+    if (type === 'crypto_price' && history_interval !== undefined) {
+      updateData.fetchInterval = history_interval * 60;
+    } else if (fetch_interval !== undefined) {
+      updateData.fetchInterval = fetch_interval;
+    }
+    
     if (work_mode !== undefined) updateData.workMode = work_mode;
     if (reusable !== undefined) updateData.reusable = reusable;
     if (allow_same_account_reuse !== undefined) updateData.allowSameAccountReuse = allow_same_account_reuse;
