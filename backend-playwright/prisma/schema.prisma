@@ -89,6 +89,34 @@ model Config {
   updatedAt DateTime @updatedAt
 }
 
+// ========== AI账号配置预设模板 ==========
+model AccountTemplate {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique  // 模板名称
+  description String?  // 模板描述
+  
+  // AI 设置
+  aiModel       String @default("gpt-4o-mini")
+  systemPrompt  String @default("你是币圈老韭菜，说话简短口语化，像微信聊天。禁止用感叹号，禁止说教，禁止营销腔。")
+  replyInterval Int    @default(60)
+  listenInterval Int   @default(5)
+  bufferSize    Int    @default(10)
+  autoReply     Boolean @default(true)
+  replyProbability Int @default(100)
+  splitByNewline Boolean @default(true)
+  multiMsgInterval Int @default(5)
+  enableImageRecognition Boolean @default(false)
+  
+  // 主动发言设置
+  proactiveEnabled Boolean @default(false)
+  proactiveIntervalMin Int @default(300)
+  proactiveIntervalMax Int @default(600)
+  proactivePrompt String @default("根据这条消息说两句，像发微信一样简短，不要超过15个字，禁止感叹号。")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // ========== 公共信息池相关模型 (v2.0新增) ==========
 
 // 信息源类型枚举

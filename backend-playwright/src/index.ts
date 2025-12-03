@@ -12,6 +12,7 @@ import { configRoutes } from './routes/config.js';
 import { statisticsRoutes } from './routes/statistics.js';
 import { infoPoolRoutes } from './routes/info-pool.js';
 import { backupRoutes } from './routes/backup.js';
+import { templateRoutes } from './routes/templates.js';
 import { InfoPoolService } from './services/info-pool.js';
 import { ProactiveScheduler } from './services/proactive-scheduler.js';
 import fs from 'fs';
@@ -87,6 +88,9 @@ app.use('/api/v1/info-pool', infoPoolRoutes);
 
 // 备份恢复路由
 app.use('/api/v1/backup', backupRoutes);
+
+// 模板路由
+app.use('/api/v1/templates', templateRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {

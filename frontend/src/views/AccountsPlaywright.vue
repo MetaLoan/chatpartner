@@ -257,8 +257,70 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <div style="display: flex; justify-content: space-between; width: 100%;">
+          <div>
+            <el-dropdown v-if="editingId" @command="handleTemplateCommand" trigger="click">
+              <el-button>
+                模板操作 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="save">💾 保存为模板</el-dropdown-item>
+                  <el-dropdown-item command="load" divided>📂 从模板加载</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+          <div>
+            <el-button @click="dialogVisible = false">取消</el-button>
+            <el-button type="primary" @click="handleSubmit">确定</el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 保存模板对话框 -->
+    <el-dialog
+      v-model="saveTemplateVisible"
+      title="保存为模板"
+      width="400px"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="模板名称" required>
+          <el-input v-model="templateName" placeholder="输入模板名称" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="templateDesc" type="textarea" :rows="2" placeholder="可选描述" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="saveTemplateVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSaveTemplate">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 选择模板对话框 -->
+    <el-dialog
+      v-model="loadTemplateVisible"
+      title="从模板加载"
+      width="500px"
+    >
+      <div v-if="templates.length === 0" style="text-align: center; padding: 20px; color: #909399;">
+        暂无模板，请先保存一个模板
+      </div>
+      <el-table v-else :data="templates" style="width: 100%">
+        <el-table-column prop="name" label="名称" />
+        <el-table-column prop="description" label="描述" show-overflow-tooltip />
+        <el-table-column prop="ai_model" label="模型" width="120" />
+        <el-table-column label="操作" width="140" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" @click="handleApplyTemplate(row)">应用</el-button>
+            <el-button size="small" type="danger" @click="handleDeleteTemplate(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="loadTemplateVisible = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -267,6 +329,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import {
   getAccounts,
   createAccount,
@@ -275,6 +338,12 @@ import {
   loginAccount,
   logoutAccount
 } from '@/api/accounts'
+import {
+  getTemplates,
+  createTemplateFromAccount,
+  applyTemplateToAccount,
+  deleteTemplate
+} from '@/api/templates'
 // 不再需要认证弹窗相关的API
 // import { getAuthStatus, submitAuthCode, submitAuthPassword } from '@/api/auth'
 
@@ -285,6 +354,13 @@ const dialogTitle = ref('添加账号')
 const formRef = ref(null)
 const searchText = ref('')
 const statusFilter = ref('')
+
+// 模板相关
+const templates = ref([])
+const saveTemplateVisible = ref(false)
+const loadTemplateVisible = ref(false)
+const templateName = ref('')
+const templateDesc = ref('')
 
 const pagination = reactive({
   page: 1,
@@ -508,6 +584,92 @@ const resetForm = () => {
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
   return new Date(dateStr).toLocaleString('zh-CN')
+}
+
+// ========== 模板相关方法 ==========
+
+const loadTemplates = async () => {
+  try {
+    const response = await getTemplates()
+    templates.value = response.data || []
+  } catch (error) {
+    console.error('获取模板列表失败:', error)
+  }
+}
+
+const handleTemplateCommand = (command) => {
+  if (command === 'save') {
+    templateName.value = ''
+    templateDesc.value = ''
+    saveTemplateVisible.value = true
+  } else if (command === 'load') {
+    loadTemplates()
+    loadTemplateVisible.value = true
+  }
+}
+
+const handleSaveTemplate = async () => {
+  if (!templateName.value.trim()) {
+    ElMessage.warning('请输入模板名称')
+    return
+  }
+  
+  try {
+    await createTemplateFromAccount(editingId, {
+      name: templateName.value.trim(),
+      description: templateDesc.value
+    })
+    ElMessage.success('模板保存成功')
+    saveTemplateVisible.value = false
+  } catch (error) {
+    console.error('保存模板失败:', error)
+    ElMessage.error(error.response?.data?.error || '保存模板失败')
+  }
+}
+
+const handleApplyTemplate = async (template) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要应用模板「${template.name}」到当前账号吗？这将覆盖当前的AI配置。`,
+      '应用模板',
+      { type: 'warning' }
+    )
+    
+    await applyTemplateToAccount(template.id, editingId)
+    ElMessage.success('模板应用成功')
+    loadTemplateVisible.value = false
+    
+    // 重新加载账号数据到表单
+    const response = await getAccounts({ page: 1, page_size: 100 })
+    const account = response.data?.find(a => a.id === editingId)
+    if (account) {
+      handleEdit(account)
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('应用模板失败:', error)
+      ElMessage.error(error.response?.data?.error || '应用模板失败')
+    }
+  }
+}
+
+const handleDeleteTemplate = async (template) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除模板「${template.name}」吗？`,
+      '删除模板',
+      { type: 'warning' }
+    )
+    
+    await deleteTemplate(template.id)
+    ElMessage.success('模板删除成功')
+    loadTemplates()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除模板失败:', error)
+      ElMessage.error('删除模板失败')
+    }
+  }
 }
 
 onMounted(() => {
