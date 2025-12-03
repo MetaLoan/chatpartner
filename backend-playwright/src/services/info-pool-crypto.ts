@@ -112,6 +112,23 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
           else if (changePercent < -2) trend = '下跌';
         }
 
+        // 格式化价格（智能处理小数）
+        const formatPrice = (p: number): string => {
+          if (p >= 1) {
+            // 价格 >= 1，保留2位小数
+            return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          } else if (p >= 0.01) {
+            // 0.01 <= 价格 < 1，保留4位小数
+            return p.toFixed(4);
+          } else if (p >= 0.0001) {
+            // 0.0001 <= 价格 < 0.01，保留6位小数
+            return p.toFixed(6);
+          } else {
+            // 价格 < 0.0001，保留8位小数
+            return p.toFixed(8);
+          }
+        };
+        
         // 格式化历史价格（从旧到新，包含时间戳）
         const historyText = histories
           .reverse() // 从旧到新排序
@@ -121,7 +138,7 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
             const day = String(date.getDate()).padStart(2, '0');
             const hour = String(date.getHours()).padStart(2, '0');
             const minute = String(date.getMinutes()).padStart(2, '0');
-            return `$${h.price.toLocaleString()}（${month}${day} ${hour}:${minute}）`;
+            return `$${formatPrice(h.price)}（${month}${day} ${hour}:${minute}）`;
           })
           .join(' → ');
 
@@ -136,7 +153,7 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
         });
 
         // 生成内容
-        const content = `${symbolStr} 当前价格: $${price.toLocaleString()}
+        const content = `${symbolStr} 当前价格: $${formatPrice(price)}
 
 更新日期：${updateDate}
 
@@ -146,7 +163,7 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
 
 （${histories.length}堆栈，间隔${historyInterval}分钟）历史价格: ${historyText}`;
 
-        const title = `${symbolStr} ${change24h >= 0 ? '📈' : '📉'} $${price.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`;
+        const title = `${symbolStr} ${change24h >= 0 ? '📈' : '📉'} $${formatPrice(price)} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`;
 
         // 更新对应的 InfoItem
         await prisma.infoItem.update({
