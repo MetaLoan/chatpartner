@@ -237,23 +237,28 @@ ${realtimeSection}
         
         const contextPrompt = groupLanguage === 'en-US' 
           ? `[Chat Context]
-Recent messages in the group. [Me] = YOUR OWN previous messages (you said these), [Others] = other people:
+Recent messages in the group (for context understanding). [Me] = YOUR OWN previous messages (you said these), [Others] = other people:
 
 ${formattedContent}
 ${realtimeSection}
 
-⚠️ CRITICAL: Read your own messages carefully. Don't contradict yourself or ask about things you just said.
+⚠️ CRITICAL: 
+1. Read your own messages carefully. Don't contradict yourself or ask about things you just said.
+2. You only need to reply to the LAST message from [Others] (the most recent one that's not from you).
+3. The earlier messages are just for context - don't respond to all of them, just the latest one.
 
 Stay consistent with your previous takes. Just reply naturally like you're texting:${passiveReplyHint}`
           : `【群聊背景】
-以下是群里最近的对话记录，【我】表示你自己之前说的话，【群友】表示其他人说的：
+以下是群里最近的对话记录（用于理解上下文），【我】表示你自己之前说的话，【群友】表示其他人说的：
 
 ${formattedContent}
 ${realtimeSection}
 【重要】
 1. ⚠️ 仔细看【我】的消息，那是你自己说的！不要自相矛盾，不要质疑自己刚说的话
-2. 保持之前的立场，不要自相矛盾
-3. 说人话！像微信群里普通人聊天一样
+2. ⚠️ 你只需要回复【群友】的最后一条消息（最新的非你自己的那条）
+3. 前面的消息只是让你理解上下文，不要对所有消息都发表意见，只回最后一条
+4. 保持之前的立场，不要自相矛盾
+5. 说人话！像微信群里普通人聊天一样
 
 【禁止的AI腔】
 - 禁止"信号""启动""机会""明确"这类词
