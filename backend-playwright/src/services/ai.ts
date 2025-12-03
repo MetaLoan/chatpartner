@@ -122,16 +122,17 @@ export class AIService {
 
       const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
-      // 如果账号没有自定义 systemPrompt，使用群组语言对应的默认提示词
-      const finalSystemPrompt = systemPrompt || getSystemPrompt(groupLanguage);
+      // 构建最终提示词：默认提示词 + 账号补充提示词
+      const basePrompt = getSystemPrompt(groupLanguage);
+      let finalSystemPrompt = basePrompt;
       
-      // 调试日志：输出使用的提示词来源
-      if (systemPrompt) {
-        console.log(`🎯 [AI] 使用账号自定义提示词 (群组语言: ${groupLanguage})`);
-        console.log(`   提示词内容: ${systemPrompt.substring(0, 100)}${systemPrompt.length > 100 ? '...' : ''}`);
+      if (systemPrompt && systemPrompt.trim()) {
+        // 账号有自定义提示词，作为补充追加到默认提示词后面
+        finalSystemPrompt = `${basePrompt}\n\n【账号补充设定】\n${systemPrompt}`;
+        console.log(`🎯 [AI] 使用默认提示词 + 账号补充提示词 (群组语言: ${groupLanguage})`);
+        console.log(`   补充内容: ${systemPrompt.substring(0, 100)}${systemPrompt.length > 100 ? '...' : ''}`);
       } else {
-        console.log(`🎯 [AI] 使用群组语言默认提示词: ${groupLanguage}`);
-        console.log(`   提示词内容: ${finalSystemPrompt.substring(0, 100)}${finalSystemPrompt.length > 100 ? '...' : ''}`);
+        console.log(`🎯 [AI] 仅使用群组语言默认提示词: ${groupLanguage}`);
       }
       
       if (finalSystemPrompt) {
@@ -236,10 +237,13 @@ ${realtimeSection}
         
         const contextPrompt = groupLanguage === 'en-US' 
           ? `[Chat Context]
-Recent messages in the group. [Me] = your previous messages, [Others] = other people:
+Recent messages in the group. [Me] = YOUR OWN previous messages (you said these), [Others] = other people:
 
 ${formattedContent}
 ${realtimeSection}
+
+⚠️ CRITICAL: Read your own messages carefully. Don't contradict yourself or ask about things you just said.
+
 Stay consistent with your previous takes. Just reply naturally like you're texting:${passiveReplyHint}`
           : `【群聊背景】
 以下是群里最近的对话记录，【我】表示你自己之前说的话，【群友】表示其他人说的：
@@ -247,8 +251,9 @@ Stay consistent with your previous takes. Just reply naturally like you're texti
 ${formattedContent}
 ${realtimeSection}
 【重要】
-1. 保持之前的立场，不要自相矛盾
-2. 说人话！像微信群里普通人聊天一样
+1. ⚠️ 仔细看【我】的消息，那是你自己说的！不要自相矛盾，不要质疑自己刚说的话
+2. 保持之前的立场，不要自相矛盾
+3. 说人话！像微信群里普通人聊天一样
 
 【禁止的AI腔】
 - 禁止"信号""启动""机会""明确"这类词

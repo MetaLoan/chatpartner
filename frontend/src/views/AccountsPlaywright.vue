@@ -180,13 +180,14 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="系统提示词" prop="system_prompt">
+        <el-form-item label="补充提示词" prop="system_prompt">
           <el-input
             v-model="form.system_prompt"
             type="textarea"
             :rows="4"
-            placeholder="例：你是币圈老韭菜，说话简短口语化，像微信聊天。禁止用感叹号，禁止说教。"
+            placeholder="可选，用于补充AI的性格或行为特征，会追加到默认提示词后面。例：你喜欢用表情符号，经常说"哈哈"。"
           />
+          <div class="form-tip">💡 系统已有默认提示词，这里填写的内容会作为补充追加，不会覆盖默认设定</div>
         </el-form-item>
 
         <el-divider content-position="left">消息处理参数</el-divider>
