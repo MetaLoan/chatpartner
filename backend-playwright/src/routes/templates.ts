@@ -17,6 +17,8 @@ router.get('/', async (req, res) => {
       id: t.id,
       name: t.name,
       description: t.description,
+      ai_api_key: t.aiApiKey,
+      ai_api_base_url: t.aiApiBaseUrl,
       ai_model: t.aiModel,
       system_prompt: t.systemPrompt,
       reply_interval: t.replyInterval,
@@ -61,6 +63,8 @@ router.get('/:id', async (req, res) => {
         id: template.id,
         name: template.name,
         description: template.description,
+        ai_api_key: template.aiApiKey,
+        ai_api_base_url: template.aiApiBaseUrl,
         ai_model: template.aiModel,
         system_prompt: template.systemPrompt,
         reply_interval: template.replyInterval,
@@ -119,6 +123,8 @@ router.post('/from-account/:accountId', async (req, res) => {
       data: {
         name: name.trim(),
         description: description || null,
+        aiApiKey: account.aiApiKey,
+        aiApiBaseUrl: account.aiApiBaseUrl,
         aiModel: account.aiModel,
         systemPrompt: account.systemPrompt,
         replyInterval: account.replyInterval,
@@ -172,6 +178,8 @@ router.post('/', async (req, res) => {
       data: {
         name: name.trim(),
         description: description || null,
+        aiApiKey: config.ai_api_key || null,
+        aiApiBaseUrl: config.ai_api_base_url || null,
         aiModel: config.ai_model || 'gpt-4o-mini',
         systemPrompt: config.system_prompt || '',
         replyInterval: config.reply_interval || 60,
@@ -227,6 +235,8 @@ router.put('/:id', async (req, res) => {
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
     if (description !== undefined) updateData.description = description;
+    if (config.ai_api_key !== undefined) updateData.aiApiKey = config.ai_api_key;
+    if (config.ai_api_base_url !== undefined) updateData.aiApiBaseUrl = config.ai_api_base_url;
     if (config.ai_model !== undefined) updateData.aiModel = config.ai_model;
     if (config.system_prompt !== undefined) updateData.systemPrompt = config.system_prompt;
     if (config.reply_interval !== undefined) updateData.replyInterval = config.reply_interval;
@@ -303,24 +313,34 @@ router.post('/:id/apply/:accountId', async (req, res) => {
     }
     
     // 应用模板配置到账号
+    const updateData: any = {
+      aiModel: template.aiModel,
+      systemPrompt: template.systemPrompt,
+      replyInterval: template.replyInterval,
+      listenInterval: template.listenInterval,
+      bufferSize: template.bufferSize,
+      autoReply: template.autoReply,
+      replyProbability: template.replyProbability,
+      splitByNewline: template.splitByNewline,
+      multiMsgInterval: template.multiMsgInterval,
+      enableImageRecognition: template.enableImageRecognition,
+      proactiveEnabled: template.proactiveEnabled,
+      proactiveIntervalMin: template.proactiveIntervalMin,
+      proactiveIntervalMax: template.proactiveIntervalMax,
+      proactivePrompt: template.proactivePrompt
+    };
+    
+    // 如果模板有 API Key 和 API 地址，也应用
+    if (template.aiApiKey) {
+      updateData.aiApiKey = template.aiApiKey;
+    }
+    if (template.aiApiBaseUrl) {
+      updateData.aiApiBaseUrl = template.aiApiBaseUrl;
+    }
+    
     await prisma.account.update({
       where: { id: accountId },
-      data: {
-        aiModel: template.aiModel,
-        systemPrompt: template.systemPrompt,
-        replyInterval: template.replyInterval,
-        listenInterval: template.listenInterval,
-        bufferSize: template.bufferSize,
-        autoReply: template.autoReply,
-        replyProbability: template.replyProbability,
-        splitByNewline: template.splitByNewline,
-        multiMsgInterval: template.multiMsgInterval,
-        enableImageRecognition: template.enableImageRecognition,
-        proactiveEnabled: template.proactiveEnabled,
-        proactiveIntervalMin: template.proactiveIntervalMin,
-        proactiveIntervalMax: template.proactiveIntervalMax,
-        proactivePrompt: template.proactivePrompt
-      }
+      data: updateData
     });
     
     res.json({ message: '模板应用成功' });

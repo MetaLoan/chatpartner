@@ -202,18 +202,25 @@ export class ProactiveScheduler {
         }
         
         if (source.workMode === 'forward') {
-          // 直接转发图片
+          // 直接转发图片（不带标题）
           console.log(`[${account.phoneNumber}] 📤 直接转发图片...`);
-          await fns.sendImage(imageBase64, item.title || undefined);
+          await fns.sendImage(imageBase64, undefined);
         } else {
-          // 图片+AI生成评论
+          // 图片+AI生成评论（包含标题内容）
           const prompt = account.proactivePrompt || '你看到了一张图片，请用简短自然的方式发表你的看法。';
-          console.log(`[${account.phoneNumber}] 📣 AI正在生成图片评论...`);
+          
+          // 构建包含标题的提示词
+          let fullPrompt = prompt;
+          if (item.title) {
+            fullPrompt = `${prompt}\n\n图片信息：${item.title}`;
+          }
+          
+          console.log(`[${account.phoneNumber}] 📣 AI正在生成图片评论（包含标题信息）...`);
           
           const reply = await this.aiService.generateReply(
             account.aiApiKey || '',
             account.aiModel,
-            prompt,
+            fullPrompt,
             [{ 
               type: 'image_url',
               image_url: { url: imageBase64 }
@@ -223,11 +230,11 @@ export class ProactiveScheduler {
           );
           
           if (reply) {
-            // 发送图片并附带AI评论
+            // 发送图片并附带AI评论（评论中包含标题信息）
             await fns.sendImage(imageBase64, reply);
           } else {
-            // AI无法生成评论，直接发图
-            await fns.sendImage(imageBase64, item.title || undefined);
+            // AI无法生成评论，直接发图（不带标题）
+            await fns.sendImage(imageBase64, undefined);
           }
         }
         
@@ -239,12 +246,12 @@ export class ProactiveScheduler {
         let messageToSend: string;
         
         if (source.workMode === 'forward') {
-          // 直接转发
-          messageToSend = item.content || item.title || '';
+          // 直接转发（不带标题，只转发内容）
+          messageToSend = item.content || '';
           
-          // 如果是价格类型，格式化输出
+          // 如果是价格类型，格式化输出（不使用标题）
           if (item.contentType === 'price') {
-            messageToSend = item.content || `${item.title}: $${item.priceValue?.toLocaleString()}`;
+            messageToSend = item.content || `$${item.priceValue?.toLocaleString()}`;
           }
           
           // 如果有链接，附加上

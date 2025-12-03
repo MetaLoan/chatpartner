@@ -162,10 +162,44 @@
             <el-option label="ETH价格" value="eth_price" />
             <el-option label="手动文字" value="manual_text" />
             <el-option label="手动图片" value="manual_image" />
+            <el-option label="晒单图" value="contract_image" />
           </el-select>
         </el-form-item>
         <el-form-item label="RSS地址" v-if="sourceForm.type === 'rss'">
           <el-input v-model="sourceForm.rss_url" placeholder="https://example.com/rss.xml" />
+        </el-form-item>
+        <el-form-item label="API接口地址" v-if="sourceForm.type === 'contract_image'" required>
+          <el-input v-model="sourceForm.api_url" placeholder="http://localhost:3000/api/generate" />
+          <div class="form-tip">晒单图生成API的完整地址</div>
+        </el-form-item>
+        <el-form-item label="交易对" v-if="sourceForm.type === 'contract_image'" required>
+          <el-input v-model="sourceForm.tradepair" placeholder="ETHUSDT 或 BTCUSDT" />
+          <div class="form-tip">需要与API底图文件对应的交易对</div>
+        </el-form-item>
+        <el-form-item label="杠杆倍数" v-if="sourceForm.type === 'contract_image'" required>
+          <el-checkbox-group v-model="sourceForm.leverage_options">
+            <el-checkbox :label="50">50倍</el-checkbox>
+            <el-checkbox :label="100">100倍</el-checkbox>
+          </el-checkbox-group>
+          <div class="form-tip">至少选择一个杠杆倍数，系统会随机选择</div>
+        </el-form-item>
+        <el-form-item v-if="sourceForm.type === 'contract_image'">
+          <el-button 
+            type="primary" 
+            @click="handleTestContractImage"
+            :loading="testingContractImage"
+            :disabled="!sourceForm.api_url || !sourceForm.tradepair || !sourceForm.leverage_options || sourceForm.leverage_options.length === 0"
+          >
+            测试API
+          </el-button>
+        </el-form-item>
+        <el-form-item label="开单时间范围" v-if="sourceForm.type === 'contract_image'">
+          <el-input-number v-model="sourceForm.open_time_range_hours" :min="1" :max="720" />
+          <span style="margin-left: 10px;">小时（最近xx小时内的随机时间）</span>
+        </el-form-item>
+        <el-form-item label="自动清理时间" v-if="sourceForm.type === 'contract_image'">
+          <el-input-number v-model="sourceForm.cleanup_hours" :min="0" :max="720" />
+          <span style="margin-left: 10px;">小时（超过xx小时的数据自动删除，0表示不清理）</span>
         </el-form-item>
         <el-form-item label="工作方式">
           <el-radio-group v-model="sourceForm.work_mode">
@@ -181,9 +215,9 @@
           <el-switch v-model="sourceForm.allow_same_account_reuse" />
           <div class="form-tip">开启后，同一账号可反复使用同一条内容（无限循环）</div>
         </el-form-item>
-        <el-form-item label="拉取间隔" v-if="['rss', 'btc_price', 'eth_price'].includes(sourceForm.type)">
-          <el-input-number v-model="sourceForm.fetch_interval" :min="60" :max="86400" />
-          <span style="margin-left: 10px;">秒</span>
+        <el-form-item label="拉取间隔" v-if="['rss', 'btc_price', 'eth_price', 'contract_image'].includes(sourceForm.type)">
+          <el-input-number v-model="sourceForm.fetch_interval" :min="20" :max="86400" />
+          <span style="margin-left: 10px;">秒（建议20-50秒）</span>
         </el-form-item>
         <el-form-item label="过期时间">
           <el-input-number v-model="sourceForm.expire_hours" :min="0" :max="720" />
@@ -254,6 +288,57 @@
         <el-button @click="batchTextDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSaveBatchText" :loading="batchTextLoading">
           批量添加
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 测试晒单图API对话框 -->
+    <el-dialog v-model="testContractImageDialogVisible" title="测试晒单图API" width="800px">
+      <div v-if="testResult">
+        <el-alert
+          :type="testResult.success ? 'success' : 'error'"
+          :title="testResult.success ? '测试成功' : '测试失败'"
+          :description="testResult.message"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 20px;"
+        />
+        
+        <el-divider content-position="left">请求信息</el-divider>
+        <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 20px;">
+          <div><strong>请求URL:</strong></div>
+          <div style="word-break: break-all; margin-top: 5px; color: #666;">{{ testResult.requestUrl }}</div>
+        </div>
+        
+        <el-divider content-position="left">响应数据</el-divider>
+        <el-scrollbar height="300px" style="background: #f5f5f5; padding: 10px; border-radius: 4px;">
+          <pre style="margin: 0; white-space: pre-wrap; word-break: break-all;">{{ JSON.stringify(testResult.data, null, 2) }}</pre>
+        </el-scrollbar>
+        
+        <div v-if="testResult.imageUrl || testResult.data?.image || testResult.data?.data?.image" style="margin-top: 20px;">
+          <el-divider content-position="left">图片预览</el-divider>
+          <div style="text-align: center;">
+            <el-image
+              :src="testResult.imageUrl || testResult.data?.image || testResult.data?.data?.image"
+              style="max-width: 100%; max-height: 400px; border: 1px solid #ddd; border-radius: 4px;"
+              :preview-src-list="[testResult.imageUrl || testResult.data?.image || testResult.data?.data?.image]"
+              fit="contain"
+            />
+          </div>
+          <div v-if="testResult.data?.params || testResult.data?.data?.params" style="margin-top: 10px; text-align: center; color: #666;">
+            <div>开仓价: {{ (testResult.data?.params || testResult.data?.data?.params)?.entprice }}</div>
+            <div>最新价: {{ (testResult.data?.params || testResult.data?.data?.params)?.lastprice }}</div>
+            <div>收益率: <strong style="color: #67c23a;">{{ (testResult.data?.params || testResult.data?.data?.params)?.yield }}</strong></div>
+          </div>
+        </div>
+      </div>
+      <div v-else style="text-align: center; padding: 40px; color: #999;">
+        点击"测试API"按钮开始测试
+      </div>
+      <template #footer>
+        <el-button @click="testContractImageDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="handleTestContractImage" :loading="testingContractImage">
+          重新测试
         </el-button>
       </template>
     </el-dialog>
@@ -341,6 +426,11 @@ const sourceForm = reactive({
   name: '',
   type: 'rss',
   rss_url: '',
+  api_url: '',
+  tradepair: '',
+  leverage_options: [50, 100],
+  open_time_range_hours: 24,
+  cleanup_hours: 48,
   work_mode: 'comment',
   reusable: false,
   allow_same_account_reuse: false,
@@ -372,6 +462,11 @@ const imageForm = reactive({
 })
 const selectedImages = ref([])
 const uploadLoading = ref(false)
+
+// 测试晒单图API
+const testContractImageDialogVisible = ref(false)
+const testingContractImage = ref(false)
+const testResult = ref(null)
 
 // 计算属性
 const hasManualTextSource = computed(() => sources.value.some(s => s.type === 'manual_text'))
@@ -429,6 +524,11 @@ const handleAddSource = () => {
     name: '',
     type: 'rss',
     rss_url: '',
+    api_url: '',
+    tradepair: '',
+    leverage_options: [50, 100],
+    open_time_range_hours: 24,
+    cleanup_hours: 48,
     work_mode: 'comment',
     reusable: false,
     allow_same_account_reuse: false,
@@ -442,10 +542,29 @@ const handleAddSource = () => {
 const handleEditSource = (row) => {
   editingSourceId.value = row.id
   sourceDialogTitle.value = '编辑信息源'
+  
+  // 解析杠杆选项
+  let leverageOptions = [50, 100]
+  if (row.leverage_options) {
+    try {
+      leverageOptions = JSON.parse(row.leverage_options)
+      if (!Array.isArray(leverageOptions)) {
+        leverageOptions = [50, 100]
+      }
+    } catch {
+      leverageOptions = [50, 100]
+    }
+  }
+  
   Object.assign(sourceForm, {
     name: row.name,
     type: row.type,
     rss_url: row.rss_url || '',
+    api_url: row.api_url || '',
+    tradepair: row.tradepair || '',
+    leverage_options: leverageOptions,
+    open_time_range_hours: row.open_time_range_hours || 24,
+    cleanup_hours: row.cleanup_hours || 48,
     work_mode: row.work_mode,
     reusable: row.reusable,
     allow_same_account_reuse: row.allow_same_account_reuse || false,
@@ -692,7 +811,8 @@ const getTypeName = (type) => {
     btc_price: 'BTC价格',
     eth_price: 'ETH价格',
     manual_text: '手动文字',
-    manual_image: '手动图片'
+    manual_image: '手动图片',
+    contract_image: '晒单图'
   }
   return names[type] || type
 }
@@ -703,7 +823,8 @@ const getTypeColor = (type) => {
     btc_price: 'warning',
     eth_price: 'info',
     manual_text: 'success',
-    manual_image: 'danger'
+    manual_image: 'danger',
+    contract_image: 'warning'
   }
   return colors[type] || ''
 }
@@ -717,6 +838,139 @@ const formatInterval = (seconds) => {
 const formatDate = (dateStr) => {
   if (!dateStr) return ''
   return new Date(dateStr).toLocaleString('zh-CN')
+}
+
+// 测试晒单图API
+const handleTestContractImage = async () => {
+  if (!sourceForm.api_url) {
+    ElMessage.warning('请先填写API地址')
+    return
+  }
+  
+  testingContractImage.value = true
+  testResult.value = null
+  
+  // 使用固定的ETHUSDT测试数据
+  const now = new Date()
+  // 开仓时间：24小时前
+  const openTime = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  
+  const formatDateTime = (date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day} ${hours}:${minutes}`
+  }
+  
+  // 使用配置的测试参数
+  const testTradepair = sourceForm.tradepair || 'ETHUSDT'
+  const testDirection = 'long'
+  // 从配置的杠杆选项中随机选择一个，如果没有则使用50
+  const leverageOptions = sourceForm.leverage_options && sourceForm.leverage_options.length > 0 
+    ? sourceForm.leverage_options 
+    : [50]
+  const testLeverage = leverageOptions[Math.floor(Math.random() * leverageOptions.length)]
+  
+  const params = new URLSearchParams({
+    tradepair: testTradepair,
+    opendate: formatDateTime(openTime),
+    date: formatDateTime(now),
+    direction: testDirection,
+    lev: testLeverage.toString()
+  })
+  
+  const requestUrl = `${sourceForm.api_url}?${params.toString()}`
+  
+  console.log('测试请求URL:', requestUrl)
+  
+  // 通过后端代理调用API（避免CORS问题）
+  try {
+    const result = await api.post('/info-pool/test-contract-image', {
+      api_url: sourceForm.api_url,
+      tradepair: testTradepair,
+      opendate: formatDateTime(openTime),
+      date: formatDateTime(now),
+      direction: testDirection,
+      lev: testLeverage
+    })
+    
+    const response = result.data
+    const apiData = response.data || response
+    
+    // 提取图片数据（支持多种数据结构）
+    let imageUrl = null
+    const findImageUrl = (obj) => {
+      if (!obj || typeof obj !== 'object') return null
+      
+      // 直接检查image字段
+      if (obj.image && typeof obj.image === 'string' && obj.image.startsWith('data:image')) {
+        return obj.image
+      }
+      
+      // 检查data.image
+      if (obj.data?.image && typeof obj.data.image === 'string' && obj.data.image.startsWith('data:image')) {
+        return obj.data.image
+      }
+      
+      // 递归查找所有包含base64的字段
+      for (const key in obj) {
+        if (typeof obj[key] === 'string' && obj[key].startsWith('data:image')) {
+          return obj[key]
+        }
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          const found = findImageUrl(obj[key])
+          if (found) return found
+        }
+      }
+      
+      return null
+    }
+    
+    imageUrl = findImageUrl(apiData)
+    
+    // 如果有图片，即使success为false也认为成功
+    const hasImage = !!imageUrl
+    const isSuccess = (response.success && apiData?.success !== false) || hasImage
+    
+    if (isSuccess || hasImage) {
+      testResult.value = {
+        success: true,
+        message: hasImage ? 'API调用成功，图片已生成' : 'API返回数据',
+        requestUrl: response.requestUrl || requestUrl,
+        data: apiData,
+        imageUrl: imageUrl
+      }
+      testContractImageDialogVisible.value = true
+      ElMessage.success(hasImage ? '测试成功，图片已生成' : '测试完成')
+    } else {
+      testResult.value = {
+        success: false,
+        message: apiData?.message || apiData?.error || response.error || 'API返回错误',
+        requestUrl: response.requestUrl || requestUrl,
+        data: apiData || response,
+        imageUrl: null
+      }
+      testContractImageDialogVisible.value = true
+      ElMessage.error('测试失败: ' + (apiData?.message || apiData?.error || response.error || '未知错误'))
+    }
+  } catch (error) {
+    console.error('测试失败:', error)
+    testResult.value = {
+      success: false,
+      message: error.response?.data?.message || error.response?.data?.error || error.message || '网络请求失败',
+      requestUrl: sourceForm.api_url ? `${sourceForm.api_url}?tradepair=${testTradepair}&...` : '未设置',
+      data: error.response?.data || {
+        error: error.message,
+        stack: error.stack
+      }
+    }
+    testContractImageDialogVisible.value = true
+    ElMessage.error('测试失败: ' + (error.response?.data?.message || error.message))
+  } finally {
+    testingContractImage.value = false
+  }
 }
 
 // 初始化

@@ -95,6 +95,10 @@ model AccountTemplate {
   name        String   @unique  // 模板名称
   description String?  // 模板描述
   
+  // AI API 设置
+  aiApiKey      String?  // AI API Key
+  aiApiBaseUrl  String?  // AI API 地址
+  
   // AI 设置
   aiModel       String @default("gpt-4o-mini")
   systemPrompt  String @default("你是币圈老韭菜，说话简短口语化，像微信聊天。禁止用感叹号，禁止说教，禁止营销腔。")
@@ -125,11 +129,12 @@ model AccountTemplate {
 // eth_price - ETH市场价
 // manual_text - 管理员手动文字
 // manual_image - 管理员手动图片
+// contract_image - 晒单图（定时从API拉取）
 
 // 信息源配置
 model InfoSource {
   id          Int      @id @default(autoincrement())
-  type        String   // rss, btc_price, eth_price, manual_text, manual_image
+  type        String   // rss, btc_price, eth_price, manual_text, manual_image, contract_image
   name        String   // 显示名称
   
   // RSS 专用配置
@@ -137,6 +142,14 @@ model InfoSource {
   
   // 价格获取专用配置
   priceApiUrl String?  // 价格API地址
+  
+  // 晒单图专用配置
+  apiUrl      String?  // 晒单图API接口地址
+  tradepair   String?  // 交易对（如 ETHUSDT、BTCUSDT）
+  leverageOptions String?  // 杠杆倍数选项（JSON数组，如 [50, 100]）
+  openTimeRangeHours Int?  // 开单时间范围（最近xx小时内的随机时间）
+  cleanupHours Int?   // 自动清理时间（超过xx小时的数据自动删除）
+  
   fetchInterval Int    @default(300) // 获取间隔（秒）
   
   // 工作方式: forward=直接转发, comment=输出观点

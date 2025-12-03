@@ -61,6 +61,11 @@ router.get('/sources', async (req: Request, res: Response) => {
         name: s.name,
         rss_url: s.rssUrl,
         price_api_url: s.priceApiUrl,
+        api_url: s.apiUrl,
+        tradepair: s.tradepair,
+        leverage_options: s.leverageOptions,
+        open_time_range_hours: s.openTimeRangeHours,
+        cleanup_hours: s.cleanupHours,
         fetch_interval: s.fetchInterval,
         work_mode: s.workMode,
         reusable: s.reusable,
@@ -84,10 +89,31 @@ router.post('/sources', async (req: Request, res: Response) => {
   const infoPoolService = req.app.get('infoPoolService') as InfoPoolService;
   
   try {
-    const { type, name, rss_url, price_api_url, fetch_interval, work_mode, reusable, allow_same_account_reuse, expire_hours, enabled } = req.body;
+    const { 
+      type, name, rss_url, price_api_url, api_url, tradepair, leverage_options,
+      open_time_range_hours, cleanup_hours, fetch_interval, 
+      work_mode, reusable, allow_same_account_reuse, expire_hours, enabled 
+    } = req.body;
     
     if (!type || !name) {
       return res.status(400).json({ error: '缺少必填字段' });
+    }
+    
+    // 验证晒单图类型必填字段
+    if (type === 'contract_image') {
+      if (!api_url || !tradepair) {
+        return res.status(400).json({ error: '晒单图类型需要填写API地址和交易对' });
+      }
+    }
+    
+    // 处理杠杆选项（如果是数组，转换为JSON字符串）
+    let leverageOptionsStr: string | null = null;
+    if (leverage_options) {
+      if (Array.isArray(leverage_options)) {
+        leverageOptionsStr = JSON.stringify(leverage_options);
+      } else if (typeof leverage_options === 'string') {
+        leverageOptionsStr = leverage_options;
+      }
     }
     
     const source = await prisma.infoSource.create({
@@ -96,6 +122,11 @@ router.post('/sources', async (req: Request, res: Response) => {
         name,
         rssUrl: rss_url,
         priceApiUrl: price_api_url,
+        apiUrl: api_url,
+        tradepair: tradepair,
+        leverageOptions: leverageOptionsStr,
+        openTimeRangeHours: open_time_range_hours,
+        cleanupHours: cleanup_hours,
         fetchInterval: fetch_interval || 300,
         workMode: work_mode || 'comment',
         reusable: reusable || false,
@@ -124,12 +155,30 @@ router.put('/sources/:id', async (req: Request, res: Response) => {
   
   try {
     const id = parseInt(req.params.id);
-    const { name, rss_url, price_api_url, fetch_interval, work_mode, reusable, allow_same_account_reuse, expire_hours, enabled } = req.body;
+    const { 
+      name, rss_url, price_api_url, api_url, tradepair, leverage_options,
+      open_time_range_hours, cleanup_hours, fetch_interval, 
+      work_mode, reusable, allow_same_account_reuse, expire_hours, enabled 
+    } = req.body;
     
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
     if (rss_url !== undefined) updateData.rssUrl = rss_url;
     if (price_api_url !== undefined) updateData.priceApiUrl = price_api_url;
+    if (api_url !== undefined) updateData.apiUrl = api_url;
+    if (tradepair !== undefined) updateData.tradepair = tradepair;
+    if (leverage_options !== undefined) {
+      // 处理杠杆选项（如果是数组，转换为JSON字符串）
+      if (Array.isArray(leverage_options)) {
+        updateData.leverageOptions = JSON.stringify(leverage_options);
+      } else if (typeof leverage_options === 'string') {
+        updateData.leverageOptions = leverage_options;
+      } else {
+        updateData.leverageOptions = null;
+      }
+    }
+    if (open_time_range_hours !== undefined) updateData.openTimeRangeHours = open_time_range_hours;
+    if (cleanup_hours !== undefined) updateData.cleanupHours = cleanup_hours;
     if (fetch_interval !== undefined) updateData.fetchInterval = fetch_interval;
     if (work_mode !== undefined) updateData.workMode = work_mode;
     if (reusable !== undefined) updateData.reusable = reusable;
@@ -466,6 +515,78 @@ router.get('/uploads/:filename', (req: Request, res: Response) => {
     res.sendFile(filePath);
   } else {
     res.status(404).json({ error: '文件不存在' });
+  }
+});
+
+// 测试路由是否工作
+router.get('/test-route', (req: Request, res: Response) => {
+  res.json({ message: '路由正常工作', timestamp: new Date().toISOString() });
+});
+
+// 测试晒单图API（通过后端代理，避免CORS问题）
+router.post('/test-contract-image', async (req: Request, res: Response) => {
+  try {
+    const { api_url, tradepair, opendate, date, direction, lev } = req.body;
+    
+    if (!api_url) {
+      return res.status(400).json({ error: '缺少API地址' });
+    }
+    
+    // 构建请求URL
+    const params = new URLSearchParams({
+      tradepair: tradepair || 'ETHUSDT',
+      opendate: opendate,
+      date: date,
+      direction: direction || 'long',
+      lev: lev?.toString() || '50'
+    });
+    
+    const requestUrl = `${api_url}?${params.toString()}`;
+    console.log('测试请求URL:', requestUrl);
+    
+    // 通过后端调用API（避免CORS问题）
+    const response = await fetch(requestUrl, {
+      headers: {
+        'ngrok-skip-browser-warning': 'true',
+        'User-Agent': 'Mozilla/5.0 (compatible; API-Client/1.0)',
+        'Accept': 'application/json',
+      }
+    });
+    
+    // 获取响应文本
+    const responseText = await response.text();
+    
+    // 尝试解析JSON
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      return res.status(500).json({
+        success: false,
+        error: 'API返回的不是JSON格式',
+        message: `响应内容: ${responseText.substring(0, 200)}...`,
+        requestUrl,
+        rawResponse: responseText
+      });
+    }
+    
+    // 返回结果
+    res.json({
+      success: response.ok && data.success,
+      requestUrl,
+      data,
+      status: response.status,
+      statusText: response.statusText
+    });
+    
+  } catch (error: any) {
+    console.error('测试API失败:', error);
+    res.status(500).json({
+      success: false,
+      error: '请求失败',
+      message: error.message || '未知错误',
+      stack: error.stack
+    });
   }
 });
 

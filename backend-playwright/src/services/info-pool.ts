@@ -4,6 +4,8 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import fs from 'fs';
+import path from 'path';
 
 // RSS/Atom 解析器 - 同时支持 RSS 和 Atom 格式
 async function parseRSS(url: string): Promise<Array<{
@@ -238,6 +240,9 @@ export class InfoPoolService {
         case 'eth_price':
           await this.fetchPrice(source, 'ETH');
           break;
+        case 'contract_image':
+          await this.fetchContractImage(source);
+          break;
         // manual_text 和 manual_image 不需要自动拉取
       }
       
@@ -306,6 +311,252 @@ export class InfoPoolService {
     await this.cleanExpiredItems(source.id, source.expireHours);
   }
   
+  /**
+   * 拉取晒单图
+   */
+  private async fetchContractImage(source: {
+    id: number;
+    name: string;
+    apiUrl: string | null;
+    tradepair: string | null;
+    leverageOptions: string | null;
+    openTimeRangeHours: number | null;
+    cleanupHours: number | null;
+  }): Promise<void> {
+    if (!source.apiUrl || !source.tradepair) {
+      console.error(`[${source.name}] 缺少必要配置: apiUrl 或 tradepair`);
+      return;
+    }
+
+    try {
+      // 生成随机开仓时间（最近xx小时内的随机时间）
+      const rangeHours = source.openTimeRangeHours || 24;
+      const now = new Date();
+      const openTime = new Date(now.getTime() - Math.random() * rangeHours * 60 * 60 * 1000);
+      
+      // 格式化时间（YYYY-MM-DD HH:mm）
+      const formatDateTime = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}`;
+      };
+
+      // 随机选择方向（70%做多，30%做空）
+      const direction = Math.random() < 0.7 ? 'long' : 'short';
+      
+      // 从配置的杠杆选项中随机选择
+      let leverage: number;
+      if (source.leverageOptions) {
+        try {
+          const options = JSON.parse(source.leverageOptions) as number[];
+          if (Array.isArray(options) && options.length > 0) {
+            leverage = options[Math.floor(Math.random() * options.length)];
+          } else {
+            leverage = 50; // 默认值
+          }
+        } catch {
+          leverage = 50; // 解析失败时使用默认值
+        }
+      } else {
+        leverage = 50; // 默认50倍
+      }
+      
+      // date 参数：使用发出请求的当前时间（用于显示在图上和获取最新价格）
+      // 在构建URL之前再次获取当前时间，确保是最新的请求时间
+      const requestTime = new Date();
+      
+      // 构建API请求URL
+      const params = new URLSearchParams({
+        tradepair: source.tradepair,
+        opendate: formatDateTime(openTime),  // 开仓时间（历史随机时间）
+        date: formatDateTime(requestTime),    // 显示时间（发出请求的当前时间）
+        direction,
+        lev: leverage.toString()
+      });
+      
+      // 生成唯一标识（基于参数）
+      const externalId = `contract_${source.tradepair}_${formatDateTime(openTime)}_${formatDateTime(requestTime)}_${direction}_${leverage}`;
+      
+      // 先检查是否已存在，避免重复请求
+      const existing = await this.prisma.infoItem.findUnique({
+        where: {
+          sourceId_externalId: {
+            sourceId: source.id,
+            externalId
+          }
+        }
+      });
+      
+      if (existing) {
+        console.log(`📸 [${source.name}] 图片已存在，跳过`);
+        return;
+      }
+      
+      const apiUrl = `${source.apiUrl}?${params.toString()}`;
+      console.log(`📸 [${source.name}] 请求晒单图: ${apiUrl}`);
+      
+      // 调用API（添加ngrok绕过请求头）
+      const response = await fetch(apiUrl, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          'User-Agent': 'Mozilla/5.0 (compatible; API-Client/1.0)',
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API返回错误: ${response.status} ${response.statusText}`);
+      }
+      
+      // 先获取文本，检查是否是JSON
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        throw new Error(`API返回的不是JSON格式。响应内容: ${responseText.substring(0, 200)}...`);
+      }
+      
+      // 从JSON中提取图片数据（优先使用image字段，如果没有则使用base64字段）
+      let imageBase64: string | null = null;
+      
+      if (result.data?.image) {
+        // image字段是完整的data URL格式：data:image/png;base64,xxxxx
+        const imageData = result.data.image;
+        if (imageData.startsWith('data:image')) {
+          // 提取base64部分（去掉data:image/png;base64,前缀）
+          const base64Match = imageData.match(/^data:image\/[^;]+;base64,(.+)$/);
+          if (base64Match && base64Match[1]) {
+            imageBase64 = base64Match[1];
+          } else {
+            // 如果没有匹配到，尝试直接使用（可能格式不同）
+            imageBase64 = imageData.split(',')[1] || imageData;
+          }
+        } else {
+          // 如果image字段本身就是base64字符串
+          imageBase64 = imageData;
+        }
+      } else if (result.data?.base64) {
+        // 如果没有image字段，使用base64字段
+        imageBase64 = result.data.base64;
+      } else if (result.image) {
+        // 也可能image在顶层
+        const imageData = result.image;
+        if (imageData.startsWith('data:image')) {
+          const base64Match = imageData.match(/^data:image\/[^;]+;base64,(.+)$/);
+          imageBase64 = base64Match?.[1] || imageData.split(',')[1] || imageData;
+        } else {
+          imageBase64 = imageData;
+        }
+      }
+      
+      if (!imageBase64) {
+        throw new Error('API返回数据中没有找到图片数据（缺少image或base64字段）');
+      }
+      
+      // 保存图片
+      const uploadDir = path.join(process.cwd(), 'data', 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      
+      const imageBuffer = Buffer.from(imageBase64, 'base64');
+      const filename = `contract_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.png`;
+      const filepath = path.join(uploadDir, filename);
+      
+      fs.writeFileSync(filepath, imageBuffer);
+      
+      // 从API返回的数据中提取所有文字内容作为标题
+      let title = `${source.tradepair} ${direction === 'long' ? '做多' : '做空'} ${leverage}x`;
+      
+      // 如果API返回了params，组合所有参数信息作为标题
+      if (result.data?.params) {
+        const params = result.data.params;
+        const parts: string[] = [];
+        
+        if (params.opendate) parts.push(`开仓: ${params.opendate}`);
+        if (params.date) parts.push(`显示: ${params.date}`);
+        if (params.direction) parts.push(params.direction === 'long' ? '做多' : '做空');
+        if (params.lev) parts.push(`${params.lev}x`);
+        if (params.entprice) parts.push(`开仓价: ${params.entprice}`);
+        if (params.lastprice) parts.push(`最新价: ${params.lastprice}`);
+        if (params.yield) parts.push(`收益率: ${params.yield}`);
+        
+        if (parts.length > 0) {
+          title = parts.join(' | ');
+        }
+      }
+      
+      // 创建新条目（只保存图片，不保存文字内容）
+      await this.prisma.infoItem.create({
+        data: {
+          sourceId: source.id,
+          contentType: 'image',
+          title,
+          content: null, // 晒单图只保留图片，不保存文字内容
+          imagePath: filename,
+          externalId,
+          publishedAt: requestTime
+        }
+      });
+      
+      console.log(`📸 [${source.name}] 新增晒单图: ${title}`);
+      
+      // 清理过期数据
+      if (source.cleanupHours && source.cleanupHours > 0) {
+        await this.cleanupContractImages(source.id, source.cleanupHours);
+      }
+      
+    } catch (error) {
+      console.error(`[${source.name}] 拉取晒单图失败:`, error);
+    }
+  }
+
+  /**
+   * 清理过期的晒单图
+   */
+  private async cleanupContractImages(sourceId: number, cleanupHours: number): Promise<void> {
+    const cleanupTime = new Date();
+    cleanupTime.setHours(cleanupTime.getHours() - cleanupHours);
+    
+    // 查找过期的条目
+    const expiredItems = await this.prisma.infoItem.findMany({
+      where: {
+        sourceId,
+        publishedAt: { lt: cleanupTime }
+      }
+    });
+    
+    if (expiredItems.length === 0) return;
+    
+    // 删除图片文件
+    const uploadDir = path.join(process.cwd(), 'data', 'uploads');
+    for (const item of expiredItems) {
+      if (item.imagePath) {
+        const filepath = path.join(uploadDir, item.imagePath);
+        if (fs.existsSync(filepath)) {
+          try {
+            fs.unlinkSync(filepath);
+          } catch (error) {
+            console.error(`删除图片文件失败: ${filepath}`, error);
+          }
+        }
+      }
+    }
+    
+    // 删除数据库记录（级联删除使用记录）
+    await this.prisma.infoItem.deleteMany({
+      where: {
+        sourceId,
+        publishedAt: { lt: cleanupTime }
+      }
+    });
+    
+    console.log(`🧹 清理了 ${expiredItems.length} 条过期晒单图`);
+  }
+
   /**
    * 拉取价格数据
    */

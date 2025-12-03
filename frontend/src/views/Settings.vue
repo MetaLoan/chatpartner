@@ -48,6 +48,7 @@
           <el-descriptions-item label="群组数量">{{ previewData.groups }}</el-descriptions-item>
           <el-descriptions-item label="信息源">{{ previewData.infoSources }}</el-descriptions-item>
           <el-descriptions-item label="信息条目">{{ previewData.infoItems }}</el-descriptions-item>
+          <el-descriptions-item label="账号模板">{{ previewData.accountTemplates || 0 }}</el-descriptions-item>
           <el-descriptions-item label="Session文件">{{ previewData.sessionFiles }}</el-descriptions-item>
           <el-descriptions-item label="上传图片">{{ previewData.uploadFiles }}</el-descriptions-item>
         </el-descriptions>
@@ -79,7 +80,7 @@
       </template>
       
       <el-descriptions :column="1" border>
-        <el-descriptions-item label="版本号">1.0.0</el-descriptions-item>
+        <el-descriptions-item label="版本号">2.0.0</el-descriptions-item>
         <el-descriptions-item label="项目名称">ChatPartner - AI 炒群助手</el-descriptions-item>
         <el-descriptions-item label="后端状态">
           <el-tag :type="backendStatus ? 'success' : 'danger'">

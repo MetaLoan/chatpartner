@@ -36,17 +36,19 @@ router.get('/export', async (req: Request, res: Response) => {
     const infoSources = await prisma.infoSource.findMany();
     const infoItems = await prisma.infoItem.findMany();
     const infoItemUsages = await prisma.infoItemUsage.findMany();
+    const accountTemplates = await prisma.accountTemplate.findMany();
     const messages = await prisma.message.findMany({ take: 1000 }); // 最近1000条消息
     const configs = await prisma.config.findMany();
     
     const dbData = {
       exportedAt: new Date().toISOString(),
-      version: '1.0',
+      version: '2.0',
       accounts,
       groups,
       infoSources,
       infoItems,
       infoItemUsages,
+      accountTemplates,
       messages,
       configs
     };
@@ -127,6 +129,7 @@ router.post('/import', upload.single('backup'), async (req: Request, res: Respon
       await prisma.infoItemUsage.deleteMany();
       await prisma.infoItem.deleteMany();
       await prisma.infoSource.deleteMany();
+      await prisma.accountTemplate.deleteMany();
       await prisma.message.deleteMany();
       await prisma.account.deleteMany();
       await prisma.group.deleteMany();
@@ -171,24 +174,27 @@ router.post('/import', upload.single('backup'), async (req: Request, res: Respon
             nickname: account.nickname,
             sessionPath: account.sessionPath,
             status: 'offline', // 导入后默认离线
-            enabled: account.enabled,
-            autoReply: account.autoReply,
-            replyProbability: account.replyProbability,
-            replyInterval: account.replyInterval,
-            listenInterval: account.listenInterval,
-            bufferSize: account.bufferSize,
-            splitByNewline: account.splitByNewline,
-            multiMsgInterval: account.multiMsgInterval,
+            enabled: account.enabled ?? true,
+            priority: account.priority ?? 5,
+            autoReply: account.autoReply ?? true,
+            replyProbability: account.replyProbability ?? 100,
+            replyInterval: account.replyInterval ?? 60,
+            listenInterval: account.listenInterval ?? 5,
+            bufferSize: account.bufferSize ?? 10,
+            splitByNewline: account.splitByNewline ?? true,
+            multiMsgInterval: account.multiMsgInterval ?? 5,
             systemPrompt: account.systemPrompt,
-            aiModel: account.aiModel,
+            aiModel: account.aiModel ?? 'gpt-4o-mini',
             aiApiKey: account.aiApiKey,
             aiApiBaseUrl: account.aiApiBaseUrl,
-            enableImageRecognition: account.enableImageRecognition,
+            enableImageRecognition: account.enableImageRecognition ?? false,
             targetGroupId: account.targetGroupId,
-            proactiveEnabled: account.proactiveEnabled,
-            proactiveIntervalMin: account.proactiveIntervalMin,
-            proactiveIntervalMax: account.proactiveIntervalMax,
+            proactiveEnabled: account.proactiveEnabled ?? false,
+            proactiveIntervalMin: account.proactiveIntervalMin ?? 300,
+            proactiveIntervalMax: account.proactiveIntervalMax ?? 600,
             proactivePrompt: account.proactivePrompt,
+            lastProactiveAt: account.lastProactiveAt ? new Date(account.lastProactiveAt) : null,
+            lastLoginAt: account.lastLoginAt ? new Date(account.lastLoginAt) : null,
             createdAt: new Date(account.createdAt),
             updatedAt: new Date(account.updatedAt)
           },
@@ -196,24 +202,27 @@ router.post('/import', upload.single('backup'), async (req: Request, res: Respon
             phoneNumber: account.phoneNumber,
             nickname: account.nickname,
             sessionPath: account.sessionPath,
-            enabled: account.enabled,
-            autoReply: account.autoReply,
-            replyProbability: account.replyProbability,
-            replyInterval: account.replyInterval,
-            listenInterval: account.listenInterval,
-            bufferSize: account.bufferSize,
-            splitByNewline: account.splitByNewline,
-            multiMsgInterval: account.multiMsgInterval,
+            enabled: account.enabled ?? true,
+            priority: account.priority ?? 5,
+            autoReply: account.autoReply ?? true,
+            replyProbability: account.replyProbability ?? 100,
+            replyInterval: account.replyInterval ?? 60,
+            listenInterval: account.listenInterval ?? 5,
+            bufferSize: account.bufferSize ?? 10,
+            splitByNewline: account.splitByNewline ?? true,
+            multiMsgInterval: account.multiMsgInterval ?? 5,
             systemPrompt: account.systemPrompt,
-            aiModel: account.aiModel,
+            aiModel: account.aiModel ?? 'gpt-4o-mini',
             aiApiKey: account.aiApiKey,
             aiApiBaseUrl: account.aiApiBaseUrl,
-            enableImageRecognition: account.enableImageRecognition,
+            enableImageRecognition: account.enableImageRecognition ?? false,
             targetGroupId: account.targetGroupId,
-            proactiveEnabled: account.proactiveEnabled,
-            proactiveIntervalMin: account.proactiveIntervalMin,
-            proactiveIntervalMax: account.proactiveIntervalMax,
-            proactivePrompt: account.proactivePrompt
+            proactiveEnabled: account.proactiveEnabled ?? false,
+            proactiveIntervalMin: account.proactiveIntervalMin ?? 300,
+            proactiveIntervalMax: account.proactiveIntervalMax ?? 600,
+            proactivePrompt: account.proactivePrompt,
+            lastProactiveAt: account.lastProactiveAt ? new Date(account.lastProactiveAt) : null,
+            lastLoginAt: account.lastLoginAt ? new Date(account.lastLoginAt) : null
           }
         });
       }
@@ -231,11 +240,18 @@ router.post('/import', upload.single('backup'), async (req: Request, res: Respon
             name: source.name,
             rssUrl: source.rssUrl,
             priceApiUrl: source.priceApiUrl,
+            apiUrl: source.apiUrl,
+            tradepair: source.tradepair,
+            leverageOptions: source.leverageOptions,
+            openTimeRangeHours: source.openTimeRangeHours,
+            cleanupHours: source.cleanupHours,
             fetchInterval: source.fetchInterval,
             workMode: source.workMode,
             reusable: source.reusable,
+            allowSameAccountReuse: source.allowSameAccountReuse ?? false,
             expireHours: source.expireHours,
             enabled: source.enabled,
+            lastFetchAt: source.lastFetchAt ? new Date(source.lastFetchAt) : null,
             createdAt: new Date(source.createdAt),
             updatedAt: new Date(source.updatedAt)
           },
@@ -244,11 +260,18 @@ router.post('/import', upload.single('backup'), async (req: Request, res: Respon
             name: source.name,
             rssUrl: source.rssUrl,
             priceApiUrl: source.priceApiUrl,
+            apiUrl: source.apiUrl,
+            tradepair: source.tradepair,
+            leverageOptions: source.leverageOptions,
+            openTimeRangeHours: source.openTimeRangeHours,
+            cleanupHours: source.cleanupHours,
             fetchInterval: source.fetchInterval,
             workMode: source.workMode,
             reusable: source.reusable,
+            allowSameAccountReuse: source.allowSameAccountReuse ?? false,
             expireHours: source.expireHours,
-            enabled: source.enabled
+            enabled: source.enabled,
+            lastFetchAt: source.lastFetchAt ? new Date(source.lastFetchAt) : null
           }
         });
       }
@@ -293,6 +316,59 @@ router.post('/import', upload.single('backup'), async (req: Request, res: Respon
         }
       }
       console.log(`   ✅ 导入 ${dbData.infoItems.length} 个信息条目`);
+    }
+    
+    // 导入账号模板
+    if (dbData.accountTemplates && dbData.accountTemplates.length > 0) {
+      for (const template of dbData.accountTemplates) {
+        await prisma.accountTemplate.upsert({
+          where: { id: template.id },
+          create: {
+            id: template.id,
+            name: template.name,
+            description: template.description,
+            aiApiKey: template.aiApiKey,
+            aiApiBaseUrl: template.aiApiBaseUrl,
+            aiModel: template.aiModel,
+            systemPrompt: template.systemPrompt,
+            replyInterval: template.replyInterval,
+            listenInterval: template.listenInterval,
+            bufferSize: template.bufferSize,
+            autoReply: template.autoReply,
+            replyProbability: template.replyProbability,
+            splitByNewline: template.splitByNewline,
+            multiMsgInterval: template.multiMsgInterval,
+            enableImageRecognition: template.enableImageRecognition,
+            proactiveEnabled: template.proactiveEnabled,
+            proactiveIntervalMin: template.proactiveIntervalMin,
+            proactiveIntervalMax: template.proactiveIntervalMax,
+            proactivePrompt: template.proactivePrompt,
+            createdAt: new Date(template.createdAt),
+            updatedAt: new Date(template.updatedAt)
+          },
+          update: {
+            name: template.name,
+            description: template.description,
+            aiApiKey: template.aiApiKey,
+            aiApiBaseUrl: template.aiApiBaseUrl,
+            aiModel: template.aiModel,
+            systemPrompt: template.systemPrompt,
+            replyInterval: template.replyInterval,
+            listenInterval: template.listenInterval,
+            bufferSize: template.bufferSize,
+            autoReply: template.autoReply,
+            replyProbability: template.replyProbability,
+            splitByNewline: template.splitByNewline,
+            multiMsgInterval: template.multiMsgInterval,
+            enableImageRecognition: template.enableImageRecognition,
+            proactiveEnabled: template.proactiveEnabled,
+            proactiveIntervalMin: template.proactiveIntervalMin,
+            proactiveIntervalMax: template.proactiveIntervalMax,
+            proactivePrompt: template.proactivePrompt
+          }
+        });
+      }
+      console.log(`   ✅ 导入 ${dbData.accountTemplates.length} 个账号模板`);
     }
     
     // 导入配置
@@ -358,7 +434,8 @@ router.post('/import', upload.single('backup'), async (req: Request, res: Respon
         accounts: dbData.accounts?.length || 0,
         groups: dbData.groups?.length || 0,
         infoSources: dbData.infoSources?.length || 0,
-        infoItems: dbData.infoItems?.length || 0
+        infoItems: dbData.infoItems?.length || 0,
+        accountTemplates: dbData.accountTemplates?.length || 0
       }
     });
     
@@ -420,6 +497,7 @@ router.post('/preview', upload.single('backup'), async (req: Request, res: Respo
         groups: dbData.groups?.length || 0,
         infoSources: dbData.infoSources?.length || 0,
         infoItems: dbData.infoItems?.length || 0,
+        accountTemplates: dbData.accountTemplates?.length || 0,
         sessionFiles,
         uploadFiles
       }

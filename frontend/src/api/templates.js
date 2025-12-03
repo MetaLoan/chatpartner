@@ -23,3 +23,4 @@ export const deleteTemplate = (id) => api.delete(`/templates/${id}`)
 export const applyTemplateToAccount = (templateId, accountId) =>
   api.post(`/templates/${templateId}/apply/${accountId}`)
 
+
