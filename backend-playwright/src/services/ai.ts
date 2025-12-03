@@ -296,17 +296,22 @@ ${realtimeSection}
         });
       }
 
-      const completion = await openai.chat.completions.create({
+      // 构建API参数
+      const apiParams: any = {
         model,
         messages: apiMessages,
         max_tokens: 200,
         temperature: 0.7, // 降低温度让AI更稳定、一致
-        top_p: 0.9,
-        
-        // 反重复参数：有效防止AI重复使用相同的词汇和句式
-        frequency_penalty: 0.6,  // 0-2，惩罚高频词，减少重复（推荐0.5-0.8）
-        presence_penalty: 0.3    // 0-2，鼓励新词汇，增加多样性（推荐0.2-0.4）
-      });
+        top_p: 0.9
+      };
+
+      // 反重复参数：OpenAI、DeepSeek、Perplexity支持，Claude不支持
+      if (!model.startsWith('claude')) {
+        apiParams.frequency_penalty = 0.6;  // 0-2，惩罚高频词，减少重复（推荐0.5-0.8）
+        apiParams.presence_penalty = 0.3;   // 0-2，鼓励新词汇，增加多样性（推荐0.2-0.4）
+      }
+
+      const completion = await openai.chat.completions.create(apiParams);
 
       return completion.choices[0]?.message?.content || '';
     } catch (error) {
