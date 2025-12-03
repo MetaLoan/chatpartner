@@ -158,8 +158,9 @@
         <el-form-item label="类型" required>
           <el-select v-model="sourceForm.type" style="width: 100%" :disabled="!!editingSourceId">
             <el-option label="RSS订阅" value="rss" />
-            <el-option label="BTC价格" value="btc_price" />
-            <el-option label="ETH价格" value="eth_price" />
+            <el-option label="实时币价" value="crypto_price" />
+            <el-option label="BTC价格（旧）" value="btc_price" disabled />
+            <el-option label="ETH价格（旧）" value="eth_price" disabled />
             <el-option label="手动文字" value="manual_text" />
             <el-option label="手动图片" value="manual_image" />
             <el-option label="晒单图" value="contract_image" />
@@ -168,6 +169,66 @@
         <el-form-item label="RSS地址" v-if="sourceForm.type === 'rss'">
           <el-input v-model="sourceForm.rss_url" placeholder="https://example.com/rss.xml" />
         </el-form-item>
+        
+        <!-- 实时币价配置 -->
+        <el-form-item label="选择币种" v-if="sourceForm.type === 'crypto_price'" required>
+          <el-select 
+            v-model="sourceForm.symbols" 
+            multiple 
+            filterable 
+            placeholder="选择要监控的币种"
+            style="width: 100%"
+          >
+            <el-option-group label="主流币">
+              <el-option label="BTC - 比特币" value="BTC" />
+              <el-option label="ETH - 以太坊" value="ETH" />
+              <el-option label="BNB - 币安币" value="BNB" />
+              <el-option label="SOL - Solana" value="SOL" />
+              <el-option label="XRP - Ripple" value="XRP" />
+              <el-option label="ADA - Cardano" value="ADA" />
+              <el-option label="AVAX - Avalanche" value="AVAX" />
+              <el-option label="DOT - Polkadot" value="DOT" />
+            </el-option-group>
+            <el-option-group label="热门山寨币">
+              <el-option label="DOGE - 狗狗币" value="DOGE" />
+              <el-option label="SHIB - 柴犬币" value="SHIB" />
+              <el-option label="MATIC - Polygon" value="MATIC" />
+              <el-option label="LINK - Chainlink" value="LINK" />
+              <el-option label="UNI - Uniswap" value="UNI" />
+              <el-option label="ATOM - Cosmos" value="ATOM" />
+              <el-option label="LTC - 莱特币" value="LTC" />
+              <el-option label="FTM - Fantom" value="FTM" />
+            </el-option-group>
+            <el-option-group label="Layer 2">
+              <el-option label="ARB - Arbitrum" value="ARB" />
+              <el-option label="OP - Optimism" value="OP" />
+            </el-option-group>
+            <el-option-group label="DeFi">
+              <el-option label="AAVE - Aave" value="AAVE" />
+              <el-option label="MKR - Maker" value="MKR" />
+              <el-option label="CRV - Curve" value="CRV" />
+              <el-option label="SUSHI - SushiSwap" value="SUSHI" />
+            </el-option-group>
+            <el-option-group label="Meme币">
+              <el-option label="PEPE - Pepe" value="PEPE" />
+              <el-option label="BONK - Bonk" value="BONK" />
+              <el-option label="WIF - dogwifhat" value="WIF" />
+              <el-option label="FLOKI - Floki" value="FLOKI" />
+            </el-option-group>
+            <el-option-group label="其他热门">
+              <el-option label="APT - Aptos" value="APT" />
+              <el-option label="SUI - Sui" value="SUI" />
+              <el-option label="TIA - Celestia" value="TIA" />
+              <el-option label="INJ - Injective" value="INJ" />
+            </el-option-group>
+          </el-select>
+          <div class="form-tip">可多选，系统会定时更新所有选中币种的价格和历史数据</div>
+        </el-form-item>
+        <el-form-item label="历史堆栈大小" v-if="sourceForm.type === 'crypto_price'">
+          <el-input-number v-model="sourceForm.history_size" :min="5" :max="100" />
+          <span style="margin-left: 10px;">条（保留最近N条历史价格供AI分析趋势）</span>
+        </el-form-item>
+        
         <el-form-item label="API接口地址" v-if="sourceForm.type === 'contract_image'" required>
           <el-input v-model="sourceForm.api_url" placeholder="http://localhost:3000/api/generate" />
           <div class="form-tip">晒单图生成API的完整地址</div>
@@ -431,6 +492,8 @@ const sourceForm = reactive({
   leverage_options: [50, 100],
   open_time_range_hours: 24,
   cleanup_hours: 48,
+  symbols: [],
+  history_size: 20,
   work_mode: 'comment',
   reusable: false,
   allow_same_account_reuse: false,
@@ -808,6 +871,7 @@ const handleSaveImages = async () => {
 const getTypeName = (type) => {
   const names = {
     rss: 'RSS订阅',
+    crypto_price: '实时币价',
     btc_price: 'BTC价格',
     eth_price: 'ETH价格',
     manual_text: '手动文字',
@@ -820,6 +884,7 @@ const getTypeName = (type) => {
 const getTypeColor = (type) => {
   const colors = {
     rss: 'primary',
+    crypto_price: 'success',
     btc_price: 'warning',
     eth_price: 'info',
     manual_text: 'success',

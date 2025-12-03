@@ -91,7 +91,7 @@ router.post('/sources', async (req: Request, res: Response) => {
   try {
     const { 
       type, name, rss_url, price_api_url, api_url, tradepair, leverage_options,
-      open_time_range_hours, cleanup_hours, fetch_interval, 
+      open_time_range_hours, cleanup_hours, fetch_interval, symbols, history_size,
       work_mode, reusable, allow_same_account_reuse, expire_hours, enabled 
     } = req.body;
     
@@ -106,6 +106,13 @@ router.post('/sources', async (req: Request, res: Response) => {
       }
     }
     
+    // 验证实时币价类型必填字段
+    if (type === 'crypto_price') {
+      if (!symbols || (Array.isArray(symbols) && symbols.length === 0)) {
+        return res.status(400).json({ error: '实时币价类型需要至少选择一个币种' });
+      }
+    }
+    
     // 处理杠杆选项（如果是数组，转换为JSON字符串）
     let leverageOptionsStr: string | null = null;
     if (leverage_options) {
@@ -113,6 +120,16 @@ router.post('/sources', async (req: Request, res: Response) => {
         leverageOptionsStr = JSON.stringify(leverage_options);
       } else if (typeof leverage_options === 'string') {
         leverageOptionsStr = leverage_options;
+      }
+    }
+    
+    // 处理币种列表（如果是数组，转换为JSON字符串）
+    let symbolsStr: string | null = null;
+    if (symbols) {
+      if (Array.isArray(symbols)) {
+        symbolsStr = JSON.stringify(symbols);
+      } else if (typeof symbols === 'string') {
+        symbolsStr = symbols;
       }
     }
     
@@ -127,7 +144,9 @@ router.post('/sources', async (req: Request, res: Response) => {
         leverageOptions: leverageOptionsStr,
         openTimeRangeHours: open_time_range_hours,
         cleanupHours: cleanup_hours,
-        fetchInterval: fetch_interval || 300,
+        symbols: symbolsStr,
+        historySize: history_size || 20,
+        fetchInterval: fetch_interval || (type === 'crypto_price' ? 60 : 300),
         workMode: work_mode || 'comment',
         reusable: reusable || false,
         allowSameAccountReuse: allow_same_account_reuse || false,
