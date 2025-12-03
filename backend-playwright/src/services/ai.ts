@@ -142,13 +142,8 @@ export class AIService {
       const messageArray = Array.isArray(messages) ? messages : [];
       const isMultiModal = enableImages && messageArray.length > 0 && messageArray.some(m => m.images && m.images.length > 0);
 
-      // 获取实时市场数据
-      const realtimeData = await getRealtimeContext();
-      const realtimeSection = realtimeData 
-        ? (groupLanguage === 'en-US' 
-            ? `\n\n【Real-time Market Data】\n${realtimeData}\n` 
-            : `\n\n【实时行情】\n${realtimeData}\n`)
-        : '';
+      // 实时价格数据已移至信息池系统，不再注入到AI上下文
+      const realtimeSection = '';
 
       // 如果是英文模式，添加强制提示
       const languageReminder = groupLanguage === 'en-US' 

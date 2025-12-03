@@ -6,6 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
+import { getBinanceSymbol } from '../config/crypto-symbols.js';
 
 // RSS/Atom 解析器 - 同时支持 RSS 和 Atom 格式
 async function parseRSS(url: string): Promise<Array<{
@@ -258,6 +259,9 @@ export class InfoPoolService {
           } else {
             console.error(`[${source?.name || 'Unknown'}] 信息源数据不完整，无法拉取晒单图`);
           }
+          break;
+        case 'crypto_price':
+          await this.fetchCryptoPrice(source);
           break;
         // manual_text 和 manual_image 不需要自动拉取
         default:

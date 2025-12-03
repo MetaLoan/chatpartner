@@ -126,23 +126,28 @@ model AccountTemplate {
 
 // 信息源类型枚举
 // rss - RSS订阅
-// btc_price - BTC市场价
-// eth_price - ETH市场价
+// btc_price - BTC市场价（已废弃，使用crypto_price替代）
+// eth_price - ETH市场价（已废弃，使用crypto_price替代）
 // manual_text - 管理员手动文字
 // manual_image - 管理员手动图片
 // contract_image - 晒单图（定时从API拉取）
+// crypto_price - 实时币价（支持批量币种）
 
 // 信息源配置
 model InfoSource {
   id          Int      @id @default(autoincrement())
-  type        String   // rss, btc_price, eth_price, manual_text, manual_image, contract_image
+  type        String   // rss, btc_price, eth_price, manual_text, manual_image, contract_image, crypto_price
   name        String   // 显示名称
   
   // RSS 专用配置
   rssUrl      String?  // RSS订阅地址
   
-  // 价格获取专用配置
+  // 价格获取专用配置（旧，已废弃）
   priceApiUrl String?  // 价格API地址
+  
+  // 实时币价专用配置（新）
+  symbols     String?  // 币种列表，JSON数组格式，如 ["BTC", "ETH", "SOL"]
+  historySize Int?     @default(20) // 保留历史价格条数
   
   // 晒单图专用配置
   apiUrl      String?  // 晒单图API接口地址
@@ -151,7 +156,7 @@ model InfoSource {
   openTimeRangeHours Int?  // 开单时间范围（最近xx小时内的随机时间）
   cleanupHours Int?   // 自动清理时间（超过xx小时的数据自动删除）
   
-  fetchInterval Int    @default(300) // 获取间隔（秒）
+  fetchInterval Int    @default(60) // 获取间隔（秒），crypto_price类型默认60秒
   
   // 工作方式: forward=直接转发, comment=输出观点
   workMode    String   @default("comment")
@@ -175,6 +180,21 @@ model InfoSource {
   updatedAt   DateTime @updatedAt
   
   items       InfoItem[]
+  priceHistories CryptoPriceHistory[]
+}
+
+// 币价历史记录（用于AI分析价格趋势）
+model CryptoPriceHistory {
+  id          Int      @id @default(autoincrement())
+  sourceId    Int
+  source      InfoSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  
+  symbol      String   // 币种符号，如 BTC, ETH
+  price       Float    // 价格
+  change24h   Float    // 24小时涨跌幅（百分比）
+  timestamp   DateTime @default(now())
+  
+  @@index([sourceId, symbol, timestamp])
 }
 
 // 信息条目
