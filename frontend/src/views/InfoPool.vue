@@ -69,10 +69,18 @@
             <el-switch v-model="row.enabled" @change="handleToggleSource(row)" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="250">
           <template #default="{ row }">
             <el-button size="small" @click="handleEditSource(row)">编辑</el-button>
             <el-button size="small" type="success" @click="handleFetchSource(row)">拉取</el-button>
+            <el-button 
+              v-if="row.type === 'crypto_price'" 
+              size="small" 
+              type="primary" 
+              @click="handleAddCrypto(row)"
+            >
+              添加币种
+            </el-button>
             <el-button size="small" type="danger" @click="handleDeleteSource(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -171,59 +179,6 @@
         </el-form-item>
         
         <!-- 实时币价配置 -->
-        <el-form-item label="选择币种" v-if="sourceForm.type === 'crypto_price'" required>
-          <el-select 
-            v-model="sourceForm.symbols" 
-            multiple 
-            filterable 
-            placeholder="选择要监控的币种"
-            style="width: 100%"
-          >
-            <el-option-group label="主流币">
-              <el-option label="BTC - 比特币" value="BTC" />
-              <el-option label="ETH - 以太坊" value="ETH" />
-              <el-option label="BNB - 币安币" value="BNB" />
-              <el-option label="SOL - Solana" value="SOL" />
-              <el-option label="XRP - Ripple" value="XRP" />
-              <el-option label="ADA - Cardano" value="ADA" />
-              <el-option label="AVAX - Avalanche" value="AVAX" />
-              <el-option label="DOT - Polkadot" value="DOT" />
-            </el-option-group>
-            <el-option-group label="热门山寨币">
-              <el-option label="DOGE - 狗狗币" value="DOGE" />
-              <el-option label="SHIB - 柴犬币" value="SHIB" />
-              <el-option label="MATIC - Polygon" value="MATIC" />
-              <el-option label="LINK - Chainlink" value="LINK" />
-              <el-option label="UNI - Uniswap" value="UNI" />
-              <el-option label="ATOM - Cosmos" value="ATOM" />
-              <el-option label="LTC - 莱特币" value="LTC" />
-              <el-option label="FTM - Fantom" value="FTM" />
-            </el-option-group>
-            <el-option-group label="Layer 2">
-              <el-option label="ARB - Arbitrum" value="ARB" />
-              <el-option label="OP - Optimism" value="OP" />
-            </el-option-group>
-            <el-option-group label="DeFi">
-              <el-option label="AAVE - Aave" value="AAVE" />
-              <el-option label="MKR - Maker" value="MKR" />
-              <el-option label="CRV - Curve" value="CRV" />
-              <el-option label="SUSHI - SushiSwap" value="SUSHI" />
-            </el-option-group>
-            <el-option-group label="Meme币">
-              <el-option label="PEPE - Pepe" value="PEPE" />
-              <el-option label="BONK - Bonk" value="BONK" />
-              <el-option label="WIF - dogwifhat" value="WIF" />
-              <el-option label="FLOKI - Floki" value="FLOKI" />
-            </el-option-group>
-            <el-option-group label="其他热门">
-              <el-option label="APT - Aptos" value="APT" />
-              <el-option label="SUI - Sui" value="SUI" />
-              <el-option label="TIA - Celestia" value="TIA" />
-              <el-option label="INJ - Injective" value="INJ" />
-            </el-option-group>
-          </el-select>
-          <div class="form-tip">可多选，系统会定时更新所有选中币种的价格和历史数据</div>
-        </el-form-item>
         <el-form-item label="历史堆栈大小" v-if="sourceForm.type === 'crypto_price'">
           <el-input-number v-model="sourceForm.history_size" :min="3" :max="20" />
           <span style="margin-left: 10px;">条（保留最近N条历史价格快照供AI分析趋势）</span>
@@ -232,6 +187,9 @@
           <el-input-number v-model="sourceForm.history_interval" :min="5" :max="1440" />
           <span style="margin-left: 10px;">分钟（每隔N分钟记录一次价格快照到历史堆栈）</span>
         </el-form-item>
+        <el-alert v-if="sourceForm.type === 'crypto_price'" type="info" :closable="false" style="margin-bottom: 15px;">
+          创建信息源后，需要在信息源列表中点击"添加币种"按钮来添加要监控的币种
+        </el-alert>
         
         <el-form-item label="API接口地址" v-if="sourceForm.type === 'contract_image'" required>
           <el-input v-model="sourceForm.api_url" placeholder="http://localhost:3000/api/generate" />
@@ -321,6 +279,78 @@
       <template #footer>
         <el-button @click="textDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSaveText">添加</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加币种对话框 -->
+    <el-dialog v-model="cryptoDialogVisible" title="添加币种" width="600px">
+      <el-form :model="cryptoForm" label-width="100px">
+        <el-form-item label="信息源">
+          <el-select v-model="cryptoForm.source_id" style="width: 100%">
+            <el-option 
+              v-for="s in sources.filter(s => s.type === 'crypto_price')" 
+              :key="s.id" 
+              :label="s.name" 
+              :value="s.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="选择币种">
+          <el-select 
+            v-model="cryptoForm.symbols" 
+            multiple 
+            filterable 
+            placeholder="选择要监控的币种"
+            style="width: 100%"
+          >
+            <el-option-group label="主流币">
+              <el-option label="BTC - 比特币" value="BTC" />
+              <el-option label="ETH - 以太坊" value="ETH" />
+              <el-option label="BNB - 币安币" value="BNB" />
+              <el-option label="SOL - Solana" value="SOL" />
+              <el-option label="XRP - Ripple" value="XRP" />
+              <el-option label="ADA - Cardano" value="ADA" />
+              <el-option label="AVAX - Avalanche" value="AVAX" />
+              <el-option label="DOT - Polkadot" value="DOT" />
+            </el-option-group>
+            <el-option-group label="热门山寨币">
+              <el-option label="DOGE - 狗狗币" value="DOGE" />
+              <el-option label="SHIB - 柴犬币" value="SHIB" />
+              <el-option label="MATIC - Polygon" value="MATIC" />
+              <el-option label="LINK - Chainlink" value="LINK" />
+              <el-option label="UNI - Uniswap" value="UNI" />
+              <el-option label="ATOM - Cosmos" value="ATOM" />
+              <el-option label="LTC - 莱特币" value="LTC" />
+              <el-option label="FTM - Fantom" value="FTM" />
+            </el-option-group>
+            <el-option-group label="Layer 2">
+              <el-option label="ARB - Arbitrum" value="ARB" />
+              <el-option label="OP - Optimism" value="OP" />
+            </el-option-group>
+            <el-option-group label="DeFi">
+              <el-option label="AAVE - Aave" value="AAVE" />
+              <el-option label="MKR - Maker" value="MKR" />
+              <el-option label="CRV - Curve" value="CRV" />
+              <el-option label="SUSHI - SushiSwap" value="SUSHI" />
+            </el-option-group>
+            <el-option-group label="Meme币">
+              <el-option label="PEPE - Pepe" value="PEPE" />
+              <el-option label="BONK - Bonk" value="BONK" />
+              <el-option label="WIF - dogwifhat" value="WIF" />
+              <el-option label="FLOKI - Floki" value="FLOKI" />
+            </el-option-group>
+            <el-option-group label="其他热门">
+              <el-option label="APT - Aptos" value="APT" />
+              <el-option label="SUI - Sui" value="SUI" />
+              <el-option label="TIA - Celestia" value="TIA" />
+              <el-option label="INJ - Injective" value="INJ" />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="cryptoDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSaveCrypto">批量添加</el-button>
       </template>
     </el-dialog>
 
@@ -496,7 +526,6 @@ const sourceForm = reactive({
   leverage_options: [50, 100],
   open_time_range_hours: 24,
   cleanup_hours: 48,
-  symbols: [],
   history_size: 5,
   history_interval: 30,
   work_mode: 'comment',
@@ -513,6 +542,13 @@ const textForm = reactive({
   source_id: null,
   title: '',
   content: ''
+})
+
+// 币种对话框
+const cryptoDialogVisible = ref(false)
+const cryptoForm = reactive({
+  source_id: null,
+  symbols: []
 })
 
 // 批量文字对话框
@@ -751,6 +787,30 @@ const handleSaveText = async () => {
     await api.post('/info-pool/items/text', textForm)
     ElMessage.success('添加成功')
     textDialogVisible.value = false
+    loadItems()
+    loadStats()
+  } catch (error) {
+    console.error('添加失败:', error)
+    ElMessage.error('添加失败')
+  }
+}
+
+// 添加币种
+const handleAddCrypto = (source) => {
+  cryptoForm.source_id = source.id
+  cryptoForm.symbols = []
+  cryptoDialogVisible.value = true
+}
+
+const handleSaveCrypto = async () => {
+  if (!cryptoForm.source_id || cryptoForm.symbols.length === 0) {
+    ElMessage.warning('请至少选择一个币种')
+    return
+  }
+  try {
+    const response = await api.post('/info-pool/items/crypto/batch', cryptoForm)
+    ElMessage.success(`添加成功：${response.success}个，跳过：${response.skipped}个，失败：${response.failed}个`)
+    cryptoDialogVisible.value = false
     loadItems()
     loadStats()
   } catch (error) {
