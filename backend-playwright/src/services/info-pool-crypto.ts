@@ -101,17 +101,6 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
           }
         }
 
-        // 计算价格趋势（基于历史记录）
-        let trend = '横盘';
-        if (histories.length >= 2) {
-          const oldestPrice = histories[histories.length - 1].price;
-          const newestPrice = histories[0].price;
-          const changePercent = ((newestPrice - oldestPrice) / oldestPrice) * 100;
-          
-          if (changePercent > 2) trend = '上涨';
-          else if (changePercent < -2) trend = '下跌';
-        }
-
         // 格式化价格（智能处理小数）
         const formatPrice = (p: number): string => {
           if (p >= 1) {
@@ -158,8 +147,6 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
 更新日期：${updateDate}
 
 24小时涨跌: ${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%
-
-近期趋势: ${trend}
 
 （${histories.length}堆栈，间隔${historyInterval}分钟）历史价格: ${historyText}`;
 
