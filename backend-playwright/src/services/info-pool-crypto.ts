@@ -33,10 +33,11 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
     for (const item of cryptoItems) {
       const symbolStr = item.symbol!;
       
-      const binanceSymbol = getBinanceSymbol(symbolStr);
+      // 优先使用预设的 Binance 交易对，如果不在预设中，尝试 {SYMBOL}USDT
+      let binanceSymbol = getBinanceSymbol(symbolStr);
       if (!binanceSymbol) {
-        console.log(`[${source.name}] 跳过不支持的币种: ${symbolStr}`);
-        continue;
+        binanceSymbol = `${symbolStr}USDT`;
+        console.log(`[${source.name}] ${symbolStr} 不在预设列表，尝试使用 ${binanceSymbol}`);
       }
 
       try {
