@@ -843,9 +843,9 @@ export class TelegramClient {
         }
         
         // 二次检查：如果检测不到 fromSelf，但内容与最近发送的消息完全一致，标记为 fromSelf
-        if (!fromSelf && this.lastSentMessages.length > 0) {
+        if (!fromSelf && this.recentSentMessages.length > 0) {
           const normalizedText = cleanedText.trim().toLowerCase();
-          const isRecentlySent = this.lastSentMessages.some(sent => {
+          const isRecentlySent = this.recentSentMessages.some(sent => {
             const normalizedSent = sent.trim().toLowerCase();
             return normalizedSent === normalizedText;
           });
