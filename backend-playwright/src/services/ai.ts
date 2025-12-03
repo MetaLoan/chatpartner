@@ -301,7 +301,11 @@ ${realtimeSection}
         messages: apiMessages,
         max_tokens: 200,
         temperature: 0.7, // 降低温度让AI更稳定、一致
-        top_p: 0.9
+        top_p: 0.9,
+        
+        // 反重复参数：有效防止AI重复使用相同的词汇和句式
+        frequency_penalty: 0.6,  // 0-2，惩罚高频词，减少重复（推荐0.5-0.8）
+        presence_penalty: 0.3    // 0-2，鼓励新词汇，增加多样性（推荐0.2-0.4）
       });
 
       return completion.choices[0]?.message?.content || '';
