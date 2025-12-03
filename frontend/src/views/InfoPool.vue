@@ -158,10 +158,12 @@
     <!-- 信息源编辑对话框 -->
     <el-dialog v-model="sourceDialogVisible" :title="sourceDialogTitle" width="500px">
       <el-form :model="sourceForm" label-width="100px">
-        <el-form-item label="名称" required>
+        <el-form-item required>
+          <template #label>名称</template>
           <el-input v-model="sourceForm.name" placeholder="信息源名称" />
         </el-form-item>
-        <el-form-item label="类型" required>
+        <el-form-item required>
+          <template #label>类型</template>
           <el-select v-model="sourceForm.type" style="width: 100%" :disabled="!!editingSourceId">
             <el-option label="RSS订阅" value="rss" />
             <el-option label="实时币价" value="crypto_price" />
@@ -234,17 +236,20 @@
           <el-input-number v-model="sourceForm.cleanup_hours" :min="0" :max="720" />
           <span style="margin-left: 10px;">小时（超过xx小时的数据自动删除，0表示不清理）</span>
         </el-form-item>
-        <el-form-item label="工作方式">
+        <el-form-item>
+          <template #label>工作方式</template>
           <el-radio-group v-model="sourceForm.work_mode">
             <el-radio value="forward">直接转发</el-radio>
             <el-radio value="comment">输出观点</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="可复用">
+        <el-form-item>
+          <template #label>可复用</template>
           <el-switch v-model="sourceForm.reusable" />
           <div class="form-tip">开启后，已使用的内容可被其他账号再次使用</div>
         </el-form-item>
-        <el-form-item label="单号反复">
+        <el-form-item>
+          <template #label>单号反复</template>
           <el-switch v-model="sourceForm.allow_same_account_reuse" />
           <div class="form-tip">开启后，同一账号可反复使用同一条内容（无限循环）</div>
         </el-form-item>
@@ -256,11 +261,13 @@
         <el-alert v-if="sourceForm.type === 'crypto_price'" type="warning" :closable="false" style="margin-bottom: 15px;">
           注意：实时币价的拉取间隔自动等于堆栈间隔时长
         </el-alert>
-        <el-form-item label="过期时间">
+        <el-form-item>
+          <template #label>过期时间</template>
           <el-input-number v-model="sourceForm.expire_hours" :min="0" :max="720" />
           <span style="margin-left: 10px;">小时 (0表示不过期)</span>
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item>
+          <template #label>启用</template>
           <el-switch v-model="sourceForm.enabled" />
         </el-form-item>
       </el-form>
@@ -273,7 +280,8 @@
     <!-- 添加手动文字对话框 -->
     <el-dialog v-model="textDialogVisible" title="添加文字内容" width="500px">
       <el-form :model="textForm" label-width="80px">
-        <el-form-item label="信息源">
+        <el-form-item>
+          <template #label>信息源</template>
           <el-select v-model="textForm.source_id" style="width: 100%">
             <el-option 
               v-for="s in sources.filter(s => s.type === 'manual_text')" 
@@ -283,10 +291,12 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="标题">
+        <el-form-item>
+          <template #label>标题</template>
           <el-input v-model="textForm.title" placeholder="可选" />
         </el-form-item>
-        <el-form-item label="内容" required>
+        <el-form-item required>
+          <template #label>内容</template>
           <el-input v-model="textForm.content" type="textarea" :rows="5" placeholder="输入要发送的文字内容" />
         </el-form-item>
       </el-form>
@@ -299,7 +309,8 @@
     <!-- 添加币种对话框 -->
     <el-dialog v-model="cryptoDialogVisible" title="添加币种" width="700px">
       <el-form :model="cryptoForm" label-width="100px">
-        <el-form-item label="信息源">
+        <el-form-item>
+          <template #label>信息源</template>
           <el-select v-model="cryptoForm.source_id" style="width: 100%" @change="handleCryptoSourceChange">
             <el-option 
               v-for="s in sources.filter(s => s.type === 'crypto_price')" 
@@ -309,7 +320,8 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="添加方式">
+        <el-form-item>
+          <template #label>添加方式</template>
           <el-radio-group v-model="cryptoForm.addMode">
             <el-radio value="select">从预设列表选择</el-radio>
             <el-radio value="custom">输入自定义币种</el-radio>
@@ -389,7 +401,8 @@
     <!-- 批量添加文字对话框 -->
     <el-dialog v-model="batchTextDialogVisible" title="批量添加文字内容" width="600px">
       <el-form :model="batchTextForm" label-width="80px">
-        <el-form-item label="信息源">
+        <el-form-item>
+          <template #label>信息源</template>
           <el-select v-model="batchTextForm.source_id" style="width: 100%">
             <el-option 
               v-for="s in sources.filter(s => s.type === 'manual_text')" 
@@ -399,7 +412,8 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="内容" required>
+        <el-form-item required>
+          <template #label>内容</template>
           <el-input 
             v-model="batchTextForm.content" 
             type="textarea" 
@@ -473,7 +487,8 @@
     <!-- 添加手动图片对话框 -->
     <el-dialog v-model="imageDialogVisible" title="批量添加图片" width="600px">
       <el-form :model="imageForm" label-width="80px">
-        <el-form-item label="信息源">
+        <el-form-item>
+          <template #label>信息源</template>
           <el-select v-model="imageForm.source_id" style="width: 100%">
             <el-option 
               v-for="s in sources.filter(s => s.type === 'manual_image')" 
@@ -483,7 +498,8 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="图片" required>
+        <el-form-item required>
+          <template #label>图片</template>
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
