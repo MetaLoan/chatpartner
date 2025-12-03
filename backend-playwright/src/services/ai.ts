@@ -226,9 +226,15 @@ ${realtimeSection}
           formattedContent = languageReminder + messages;
         }
 
-        apiMessages.push({
-          role: 'user',
-          content: `【群聊背景】
+        // 根据语言选择不同的上下文提示
+        const contextPrompt = groupLanguage === 'en-US' 
+          ? `[Chat Context]
+Recent messages in the group. [Me] = your previous messages, [Others] = other people:
+
+${formattedContent}
+${realtimeSection}
+Stay consistent with your previous takes. Just reply naturally like you're texting:`
+          : `【群聊背景】
 以下是群里最近的对话记录，【我】表示你自己之前说的话，【群友】表示其他人说的：
 
 ${formattedContent}
@@ -250,7 +256,11 @@ ${realtimeSection}
 ✅ "不好说"
 ✅ "看着挺猛"
 
-用最简单的大白话回复：`
+用最简单的大白话回复：`;
+
+        apiMessages.push({
+          role: 'user',
+          content: contextPrompt
         });
       }
 
