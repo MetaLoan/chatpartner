@@ -634,10 +634,10 @@ export class InfoPoolService {
   }
 
   /**
-   * 拉取价格数据
+   * 拉取价格数据（旧方法，用于 btc_price/eth_price 类型）
    */
   private async fetchPrice(source: { id: number; name: string }, symbol: string): Promise<void> {
-    const priceData = await fetchCryptoPrice(symbol);
+    const priceData = await fetchCryptoPriceLegacy(symbol);
     if (!priceData) return;
     
     const externalId = `${symbol}_${new Date().toISOString().slice(0, 13)}`; // 每小时一条
