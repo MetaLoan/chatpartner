@@ -444,7 +444,7 @@ const form = reactive({
   ai_api_base_url: '',
   nickname: '',
   ai_model: 'gpt-4o-mini',
-  system_prompt: '你是一个友好、有帮助的AI助手，会在Telegram群组中自然地参与对话。保持简洁、有趣的回复风格。',
+  system_prompt: '',  // 默认为空，使用系统默认提示词
   reply_interval: 60,
   listen_interval: 5,
   buffer_size: 10,
