@@ -134,6 +134,22 @@ export class TelegramClient {
         this.status = 'online';
         this.isRunning = true;
         await this.updateStatus('online');
+        
+        // 如果设置了目标群组，自动进入并开始监听
+        const account = await this.prisma.account.findUnique({
+          where: { id: this.account.id },
+          include: { targetGroup: true }
+        });
+        
+        if (account?.targetGroupId && account.targetGroup) {
+          this.log(`   → 自动进入目标群组: ${account.targetGroup.name}`);
+          setTimeout(() => {
+            this.navigateToGroupAndMonitor(account.targetGroup!.telegramId).catch((error) => {
+              this.logError(`❌ 自动监控失败:`, error);
+            });
+          }, 2000);
+        }
+        
         return; // 已登录，无需继续监测
       } else {
         this.log(`   ⚠️ Session失效，需要重新登录`);
@@ -192,6 +208,23 @@ export class TelegramClient {
           this.isRunning = true;
           
           this.log(`🎉 账号 ${this.account.phoneNumber} 已就绪！`);
+          
+          // 如果设置了目标群组，自动进入并开始监听
+          const account = await this.prisma.account.findUnique({
+            where: { id: this.account.id },
+            include: { targetGroup: true }
+          });
+          
+          if (account?.targetGroupId && account.targetGroup) {
+            this.log(`   → 自动进入目标群组: ${account.targetGroup.name}`);
+            setTimeout(() => {
+              this.navigateToGroupAndMonitor(account.targetGroup!.telegramId).catch((error) => {
+                this.logError(`❌ 自动监控失败:`, error);
+              });
+            }, 2000);
+          } else {
+            this.log(`   ℹ️ 未设置目标群组，等待手动操作`);
+          }
         } else if (attempt >= maxAttempts) {
           this.log(`⏰ 登录监测超时（10分钟），请手动重启服务`);
           clearInterval(checkInterval);
