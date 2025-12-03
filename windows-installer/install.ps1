@@ -186,62 +186,55 @@ Write-Host "   ✅ 前端依赖安装完成" -ForegroundColor Green
 # ============================================
 Write-Host "📝 创建启动脚本..." -ForegroundColor Yellow
 
-# 停止脚本
+# Stop script
 $stopScript = @"
 @echo off
-chcp 65001 >nul
-echo 正在停止 ChatPartner 服务...
+echo Stopping ChatPartner services...
 taskkill /f /im node.exe 2>nul
-echo ✅ 服务已停止
+echo Services stopped
 pause
 "@
-# 使用 Default 编码（GBK）避免 BOM 问题
-[System.IO.File]::WriteAllText("$INSTALL_DIR\停止ChatPartner.bat", $stopScript, [System.Text.Encoding]::Default)
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$INSTALL_DIR\StopChatPartner.bat", $stopScript, $utf8NoBom)
 
-# 保存登录状态脚本
+# Save session script
 $saveSessionScript = @"
 @echo off
-chcp 65001 >nul
-title ChatPartner - 保存登录状态
+title ChatPartner - Save Login Sessions
 color 0B
 
 echo.
 echo   ============================================
-echo      ChatPartner - 保存登录状态
+echo      ChatPartner - Save Login Sessions
 echo   ============================================
 echo.
 
-:: 获取脚本所在目录（项目根目录）
 set "PROJECT_DIR=%~dp0chatpartner"
 set "BACKEND_DIR=%PROJECT_DIR%\backend-playwright"
 set "SESSIONS_DIR=%BACKEND_DIR%\data\sessions"
 set "BACKUP_DIR=%BACKEND_DIR%\data\sessions_backup"
 
-:: 检查目录是否存在
 if not exist "%BACKEND_DIR%" (
-    echo [错误] 未找到项目目录: %BACKEND_DIR%
-    echo 请确保已正确安装 ChatPartner
+    echo [Error] Project directory not found: %BACKEND_DIR%
+    echo Please ensure ChatPartner is installed correctly
     echo.
     pause
     exit /b 1
 )
 
-:: 创建备份目录
 if not exist "%BACKUP_DIR%" (
     mkdir "%BACKUP_DIR%"
-    echo ✅ 创建备份目录: %BACKUP_DIR%
+    echo Backup directory created: %BACKUP_DIR%
 )
 
-:: 检查是否有session文件
 if not exist "%SESSIONS_DIR%" (
-    echo ℹ️  未找到session目录，可能还没有登录任何账号
+    echo No session directory found, may not have logged in any accounts yet
     echo.
     pause
     exit /b 0
 )
 
-:: 备份所有session文件
-echo 📦 正在备份登录状态...
+echo Backing up login sessions...
 echo.
 
 setlocal enabledelayedexpansion
@@ -250,83 +243,75 @@ for /d %%d in ("%SESSIONS_DIR%\*") do (
     set "SESSION_NAME=%%~nxd"
     set "BACKUP_PATH=%BACKUP_DIR%\!SESSION_NAME!"
     
-    :: 如果备份目录已存在，先删除
     if exist "!BACKUP_PATH!" (
         rd /s /q "!BACKUP_PATH!" 2>nul
     )
     
-    :: 复制session目录
     xcopy /E /I /Y "%%d" "!BACKUP_PATH!\" >nul 2>&1
     if !errorLevel! equ 0 (
-        echo   ✅ 已备份: !SESSION_NAME!
+        echo   Backed up: !SESSION_NAME!
         set /a BACKUP_COUNT+=1
     ) else (
-        echo   ⚠️  备份失败: !SESSION_NAME!
+        echo   Backup failed: !SESSION_NAME!
     )
 )
 
-:: 也备份单个session文件（兼容旧版本）
 for %%f in ("%SESSIONS_DIR%\*.session") do (
     set "SESSION_FILE=%%~nxf"
     copy /Y "%%f" "%BACKUP_DIR%\%SESSION_FILE%" >nul 2>&1
     if !errorLevel! equ 0 (
-        echo   ✅ 已备份文件: !SESSION_FILE!
+        echo   Backed up file: !SESSION_FILE!
         set /a BACKUP_COUNT+=1
     )
 )
 
 echo.
 if %BACKUP_COUNT% gtr 0 (
-    echo ✅ 备份完成！共备份 %BACKUP_COUNT% 个登录状态
+    echo Backup completed! Total: %BACKUP_COUNT% sessions
     echo.
-    echo 📁 备份位置: %BACKUP_DIR%
+    echo Backup location: %BACKUP_DIR%
     echo.
-    echo 💡 提示: 下次启动时会自动恢复这些登录状态
+    echo Tip: Sessions will be automatically restored on next startup
 ) else (
-    echo ℹ️  没有找到需要备份的登录状态
+    echo No sessions found to backup
 )
 
 echo.
 pause
 "@
-# 使用 Default 编码（GBK）避免 BOM 问题
-[System.IO.File]::WriteAllText("$INSTALL_DIR\保存登录状态.bat", $saveSessionScript, [System.Text.Encoding]::Default)
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$INSTALL_DIR\SaveSessions.bat", $saveSessionScript, $utf8NoBom)
 
-# 恢复登录状态脚本
+# Restore session script
 $restoreSessionScript = @"
 @echo off
-chcp 65001 >nul
-title ChatPartner - 恢复登录状态
+title ChatPartner - Restore Login Sessions
 color 0B
 
 echo.
 echo   ============================================
-echo      ChatPartner - 恢复登录状态
+echo      ChatPartner - Restore Login Sessions
 echo   ============================================
 echo.
 
-:: 获取脚本所在目录（项目根目录）
 set "PROJECT_DIR=%~dp0chatpartner"
 set "BACKEND_DIR=%PROJECT_DIR%\backend-playwright"
 set "SESSIONS_DIR=%BACKEND_DIR%\data\sessions"
 set "BACKUP_DIR=%BACKEND_DIR%\data\sessions_backup"
 
-:: 检查备份目录是否存在
 if not exist "%BACKUP_DIR%" (
-    echo ℹ️  未找到备份目录，可能还没有保存过登录状态
+    echo No backup directory found, may not have saved sessions yet
     echo.
     pause
     exit /b 0
 )
 
-:: 确保session目录存在
 if not exist "%SESSIONS_DIR%" (
     mkdir "%SESSIONS_DIR%"
-    echo ✅ 创建session目录: %SESSIONS_DIR%
+    echo Session directory created: %SESSIONS_DIR%
 )
 
-:: 恢复所有session备份
-echo 📦 正在恢复登录状态...
+echo Restoring login sessions...
 echo.
 
 setlocal enabledelayedexpansion
@@ -335,87 +320,84 @@ for /d %%d in ("%BACKUP_DIR%\*") do (
     set "SESSION_NAME=%%~nxd"
     set "TARGET_PATH=%SESSIONS_DIR%\!SESSION_NAME!"
     
-    :: 如果目标目录已存在，先删除
     if exist "!TARGET_PATH!" (
         rd /s /q "!TARGET_PATH!" 2>nul
     )
     
-    :: 复制session目录
     xcopy /E /I /Y "%%d" "!TARGET_PATH!\" >nul 2>&1
     if !errorLevel! equ 0 (
-        echo   ✅ 已恢复: !SESSION_NAME!
+        echo   Restored: !SESSION_NAME!
         set /a RESTORE_COUNT+=1
     ) else (
-        echo   ⚠️  恢复失败: !SESSION_NAME!
+        echo   Restore failed: !SESSION_NAME!
     )
 )
 
-:: 也恢复单个session文件（兼容旧版本）
 for %%f in ("%BACKUP_DIR%\*.session") do (
     set "SESSION_FILE=%%~nxf"
     copy /Y "%%f" "%SESSIONS_DIR%\%SESSION_FILE%" >nul 2>&1
     if !errorLevel! equ 0 (
-        echo   ✅ 已恢复文件: !SESSION_FILE!
+        echo   Restored file: !SESSION_FILE!
         set /a RESTORE_COUNT+=1
     )
 )
 
 echo.
 if %RESTORE_COUNT% gtr 0 (
-    echo ✅ 恢复完成！共恢复 %RESTORE_COUNT% 个登录状态
+    echo Restore completed! Total: %RESTORE_COUNT% sessions
 ) else (
-    echo ℹ️  没有找到需要恢复的登录状态
+    echo No sessions found to restore
 )
 
 echo.
 pause
 "@
-# 使用 Default 编码（GBK）避免 BOM 问题
-[System.IO.File]::WriteAllText("$INSTALL_DIR\恢复登录状态.bat", $restoreSessionScript, [System.Text.Encoding]::Default)
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$INSTALL_DIR\RestoreSessions.bat", $restoreSessionScript, $utf8NoBom)
 
-# 更新启动脚本，在启动前自动恢复登录状态
+# Start script with auto-restore sessions
 $startScript = @"
 @echo off
-chcp 65001 >nul
 title ChatPartner v2.0
 cd /d "$projectDir"
 
 echo.
 echo   ====================================
-echo      ChatPartner v2.0 启动中...
+echo      ChatPartner v2.0 Starting...
 echo   ====================================
 echo.
 
-REM 自动恢复登录状态
-echo 📦 正在恢复登录状态...
-call "%~dp0恢复登录状态.bat" >nul 2>&1
+REM Auto-restore login sessions
+echo Restoring login sessions...
+call "%~dp0RestoreSessions.bat" >nul 2>&1
 
-REM 启动后端
-start "ChatPartner Backend" cmd /k "cd backend-playwright && npm run dev"
+REM Start backend
+start /D "%~dp0chatpartner\backend-playwright" cmd /k npm run dev
 
-REM 等待后端启动
+REM Wait for backend
 timeout /t 5 /nobreak > nul
 
-REM 启动前端
-start "ChatPartner Frontend" cmd /k "cd frontend && npm run dev"
+REM Start frontend
+start /D "%~dp0chatpartner\frontend" cmd /k npm run dev
 
-REM 等待前端启动
+REM Wait for frontend
 timeout /t 5 /nobreak > nul
 
-REM 打开浏览器
+REM Open browser
 start http://localhost:3000
 
 echo.
-echo   ✅ 服务已启动!
-echo   前端: http://localhost:3000
-echo   后端: http://localhost:8080
+echo   Services started!
+echo   Frontend: http://localhost:3000
+echo   Backend: http://localhost:8080
 echo.
-echo   💡 提示: 使用"保存登录状态.bat"可以备份所有登录状态
+echo   Tip: Use SaveSessions.bat to backup all login sessions
 echo.
 pause
 "@
-# 使用 Default 编码（GBK）避免 BOM 问题，确保批处理文件可以正常执行
-[System.IO.File]::WriteAllText("$INSTALL_DIR\启动ChatPartner.bat", $startScript, [System.Text.Encoding]::Default)
+# Use ASCII encoding to avoid any encoding issues
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$INSTALL_DIR\StartChatPartner.bat", $startScript, $utf8NoBom)
 
 Write-Host "   ✅ 启动脚本创建完成" -ForegroundColor Green
 
@@ -425,7 +407,7 @@ Write-Host "   ✅ 启动脚本创建完成" -ForegroundColor Green
 Write-Host "🖥️ 创建桌面快捷方式..." -ForegroundColor Yellow
 $WshShell = New-Object -comObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\ChatPartner.lnk")
-$Shortcut.TargetPath = "$INSTALL_DIR\启动ChatPartner.bat"
+$Shortcut.TargetPath = "$INSTALL_DIR\StartChatPartner.bat"
 $Shortcut.WorkingDirectory = $INSTALL_DIR
 $Shortcut.Description = "ChatPartner AI 群营销助手"
 $Shortcut.Save()
