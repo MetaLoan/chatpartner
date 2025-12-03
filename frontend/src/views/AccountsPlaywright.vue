@@ -185,9 +185,9 @@
             v-model="form.system_prompt"
             type="textarea"
             :rows="4"
-            placeholder="可选，用于补充AI的性格或行为特征，会追加到默认提示词后面。例：你喜欢用表情符号，经常说"哈哈"。"
+            placeholder="可选，用于补充AI的性格或行为特征，会追加到默认提示词后面。例：你喜欢用表情符号，经常说哈哈。"
           />
-          <div class="form-tip">💡 系统已有默认提示词，这里填写的内容会作为补充追加，不会覆盖默认设定</div>
+          <div class="form-tip">系统已有默认提示词，这里填写的内容会作为补充追加，不会覆盖默认设定</div>
         </el-form-item>
 
         <el-divider content-position="left">消息处理参数</el-divider>
