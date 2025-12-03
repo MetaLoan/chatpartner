@@ -17,7 +17,8 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
     }
 
     const symbols: string[] = JSON.parse(source.symbols);
-    const historySize = source.historySize || 20;
+    const historySize = source.historySize || 5;
+    const historyInterval = source.historyInterval || 30; // 分钟
 
     console.log(`[${source.name}] 开始拉取 ${symbols.length} 个币种的价格`);
 
@@ -52,56 +53,105 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
 
         const price = parseFloat(data.lastPrice);
         const change24h = parseFloat(data.priceChangePercent || '0');
+        const now = new Date();
 
-        // 保存历史记录
-        await prisma.cryptoPriceHistory.create({
-          data: {
-            sourceId: source.id,
-            symbol,
-            price,
-            change24h
-          }
-        });
-
-        // 清理旧历史记录，只保留最近 historySize 条
-        const histories = await prisma.cryptoPriceHistory.findMany({
+        // 检查是否需要记录历史价格（根据间隔时长）
+        const lastHistory = await prisma.cryptoPriceHistory.findFirst({
           where: { sourceId: source.id, symbol },
           orderBy: { timestamp: 'desc' }
         });
 
-        if (histories.length > historySize) {
-          const toDelete = histories.slice(historySize);
-          await prisma.cryptoPriceHistory.deleteMany({
-            where: {
-              id: { in: toDelete.map(h => h.id) }
-            }
-          });
+        let shouldRecordHistory = true;
+        if (lastHistory) {
+          const minutesSinceLastRecord = (now.getTime() - lastHistory.timestamp.getTime()) / 1000 / 60;
+          shouldRecordHistory = minutesSinceLastRecord >= historyInterval;
         }
 
-        // 获取历史价格用于生成分析内容
-        const recentHistories = histories.slice(0, Math.min(5, historySize));
-        const priceHistory = recentHistories.map(h => h.price);
-        
-        // 计算价格趋势
+        // 如果满足间隔，记录新的历史价格
+        if (shouldRecordHistory) {
+          await prisma.cryptoPriceHistory.create({
+            data: {
+              sourceId: source.id,
+              symbol,
+              price,
+              change24h,
+              timestamp: now
+            }
+          });
+          console.log(`[${source.name}] ${symbol}: 已记录历史价格快照`);
+        }
+
+        // 获取所有历史记录（最多 historySize 条）
+        const histories = await prisma.cryptoPriceHistory.findMany({
+          where: { sourceId: source.id, symbol },
+          orderBy: { timestamp: 'desc' },
+          take: historySize
+        });
+
+        // 清理超出堆栈大小的旧记录
+        if (histories.length === historySize) {
+          const oldRecords = await prisma.cryptoPriceHistory.findMany({
+            where: { sourceId: source.id, symbol },
+            orderBy: { timestamp: 'desc' },
+            skip: historySize
+          });
+          if (oldRecords.length > 0) {
+            await prisma.cryptoPriceHistory.deleteMany({
+              where: {
+                id: { in: oldRecords.map(h => h.id) }
+              }
+            });
+          }
+        }
+
+        // 计算价格趋势（基于历史记录）
         let trend = '横盘';
-        if (priceHistory.length >= 2) {
-          const firstPrice = priceHistory[priceHistory.length - 1];
-          const lastPrice = priceHistory[0];
-          const changePercent = ((lastPrice - firstPrice) / firstPrice) * 100;
+        if (histories.length >= 2) {
+          const oldestPrice = histories[histories.length - 1].price;
+          const newestPrice = histories[0].price;
+          const changePercent = ((newestPrice - oldestPrice) / oldestPrice) * 100;
           
           if (changePercent > 2) trend = '上涨';
           else if (changePercent < -2) trend = '下跌';
         }
 
+        // 格式化历史价格（从旧到新，包含时间戳）
+        const historyText = histories
+          .reverse() // 从旧到新排序
+          .map(h => {
+            const date = new Date(h.timestamp);
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hour = String(date.getHours()).padStart(2, '0');
+            const minute = String(date.getMinutes()).padStart(2, '0');
+            return `$${h.price.toLocaleString()}（${month}${day} ${hour}:${minute}）`;
+          })
+          .join(' → ');
+
+        // 格式化更新时间
+        const updateDate = now.toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+
         // 生成内容
         const content = `${symbol} 当前价格: $${price.toLocaleString()}
+
+更新日期：${updateDate}
+
 24小时涨跌: ${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%
+
 近期趋势: ${trend}
-历史价格: ${priceHistory.slice(0, 3).map(p => '$' + p.toLocaleString()).join(' → ')}`;
+
+（${histories.length}堆栈，间隔${historyInterval}分钟）历史价格: ${historyText}`;
 
         const title = `${symbol} ${change24h >= 0 ? '📈' : '📉'} $${price.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`;
 
-        // 创建或更新 InfoItem
+        // 创建或更新 InfoItem（每次都更新当前价格，即使不记录历史）
         const existing = await prisma.infoItem.findFirst({
           where: {
             sourceId: source.id,

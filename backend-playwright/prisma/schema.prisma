@@ -147,7 +147,8 @@ model InfoSource {
   
   // 实时币价专用配置（新）
   symbols     String?  // 币种列表，JSON数组格式，如 ["BTC", "ETH", "SOL"]
-  historySize Int?     @default(20) // 保留历史价格条数
+  historySize Int?     @default(5) // 保留历史价格条数
+  historyInterval Int? @default(30) // 历史价格记录间隔（分钟）
   
   // 晒单图专用配置
   apiUrl      String?  // 晒单图API接口地址

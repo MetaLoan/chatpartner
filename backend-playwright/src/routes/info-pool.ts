@@ -91,7 +91,7 @@ router.post('/sources', async (req: Request, res: Response) => {
   try {
     const { 
       type, name, rss_url, price_api_url, api_url, tradepair, leverage_options,
-      open_time_range_hours, cleanup_hours, fetch_interval, symbols, history_size,
+      open_time_range_hours, cleanup_hours, fetch_interval, symbols, history_size, history_interval,
       work_mode, reusable, allow_same_account_reuse, expire_hours, enabled 
     } = req.body;
     
@@ -145,7 +145,8 @@ router.post('/sources', async (req: Request, res: Response) => {
         openTimeRangeHours: open_time_range_hours,
         cleanupHours: cleanup_hours,
         symbols: symbolsStr,
-        historySize: history_size || 20,
+        historySize: history_size || 5,
+        historyInterval: history_interval || 30,
         fetchInterval: fetch_interval || (type === 'crypto_price' ? 60 : 300),
         workMode: work_mode || 'comment',
         reusable: reusable || false,

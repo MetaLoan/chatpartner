@@ -225,8 +225,12 @@
           <div class="form-tip">可多选，系统会定时更新所有选中币种的价格和历史数据</div>
         </el-form-item>
         <el-form-item label="历史堆栈大小" v-if="sourceForm.type === 'crypto_price'">
-          <el-input-number v-model="sourceForm.history_size" :min="5" :max="100" />
-          <span style="margin-left: 10px;">条（保留最近N条历史价格供AI分析趋势）</span>
+          <el-input-number v-model="sourceForm.history_size" :min="3" :max="20" />
+          <span style="margin-left: 10px;">条（保留最近N条历史价格快照供AI分析趋势）</span>
+        </el-form-item>
+        <el-form-item label="堆栈间隔时长" v-if="sourceForm.type === 'crypto_price'">
+          <el-input-number v-model="sourceForm.history_interval" :min="5" :max="1440" />
+          <span style="margin-left: 10px;">分钟（每隔N分钟记录一次价格快照到历史堆栈）</span>
         </el-form-item>
         
         <el-form-item label="API接口地址" v-if="sourceForm.type === 'contract_image'" required>
@@ -493,7 +497,8 @@ const sourceForm = reactive({
   open_time_range_hours: 24,
   cleanup_hours: 48,
   symbols: [],
-  history_size: 20,
+  history_size: 5,
+  history_interval: 30,
   work_mode: 'comment',
   reusable: false,
   allow_same_account_reuse: false,
