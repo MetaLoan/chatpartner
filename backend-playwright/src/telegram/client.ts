@@ -681,6 +681,9 @@ export class TelegramClient {
         
         if (isDuplicate) {
           this.log(`🚫 AI生成了重复内容，跳过发送: "${reply.substring(0, 30)}..."`);
+          this.log(`   ⚠️ 已标记此消息为已处理，避免重复触发`);
+          // 重要：即使跳过发送，也要更新最后回复时间，避免死循环
+          this.lastReplyTime.set(chatId, new Date());
           return;
         }
         
