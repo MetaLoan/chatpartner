@@ -24,3 +24,4 @@ export const applyTemplateToAccount = (templateId, accountId) =>
   api.post(`/templates/${templateId}/apply/${accountId}`)
 
 
+

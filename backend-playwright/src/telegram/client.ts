@@ -48,61 +48,75 @@ export class TelegramClient {
    * 启动浏览器（非无头模式，让用户手动登录）
    */
   async start(): Promise<void> {
-    if (this.browser) {
-      this.log(`⚠️ 浏览器已存在 [账号: ${this.account.phoneNumber}]`);
-      return;
+    try {
+      if (this.browser) {
+        this.log(`⚠️ 浏览器已存在 [账号: ${this.account.phoneNumber}]`);
+        return;
+      }
+
+      this.log(`🌐 启动浏览器 [账号: ${this.account.phoneNumber}]`);
+
+      // 优先使用数据库中保存的sessionPath，否则生成新的
+      let sessionPath = this.account.sessionPath || this.getSessionPath();
+      
+      // 确保是绝对路径
+      if (!path.isAbsolute(sessionPath)) {
+        sessionPath = path.resolve(process.cwd(), sessionPath);
+      }
+      
+      const hasSession = fs.existsSync(sessionPath);
+
+      if (hasSession) {
+        this.log(`   ✅ 找到会话文件: ${sessionPath}`);
+        this.log(`   → 将使用已保存的登录状态`);
+      } else {
+        this.log(`   ℹ️  未找到会话文件: ${sessionPath}`);
+        this.log(`   → 需要手动登录`);
+      }
+
+      // 确保会话目录存在
+      const sessionDir = path.dirname(sessionPath);
+      fs.mkdirSync(sessionDir, { recursive: true });
+
+      // 启动浏览器（非无头模式，让用户看到并操作）
+      this.log(`   → 正在启动浏览器...`);
+      this.browser = await chromium.launch({
+        headless: false, // 必须显示浏览器让用户登录
+        slowMo: 50,
+      });
+      this.log(`   ✅ 浏览器已启动`);
+
+      // 创建上下文
+      this.log(`   → 正在创建浏览器上下文...`);
+      this.context = await this.browser.newContext({
+        storageState: hasSession ? sessionPath : undefined,
+        viewport: { width: 1280, height: 800 },
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      });
+      this.log(`   ✅ 浏览器上下文已创建`);
+
+      this.page = await this.context.newPage();
+      this.log(`   ✅ 页面已创建`);
+
+      // 导航到 Telegram Web
+      this.log(`📱 打开 Telegram Web...`);
+      await this.page.goto(TELEGRAM_WEB_URL, { 
+        waitUntil: 'domcontentloaded',
+        timeout: 60000 
+      });
+      this.log(`   ✅ Telegram Web 已加载`);
+
+      await this.updateStatus('authenticating');
+      
+      // 启动后台登录监测任务
+      this.log(`   → 启动登录监测...`);
+      this.startLoginMonitoring(sessionPath, hasSession);
+      this.log(`   ✅ 客户端启动完成`);
+    } catch (error) {
+      this.logError(`❌ 客户端启动失败:`, error);
+      await this.updateStatus('error');
+      throw error;
     }
-
-    this.log(`🌐 启动浏览器 [账号: ${this.account.phoneNumber}]`);
-
-    // 优先使用数据库中保存的sessionPath，否则生成新的
-    let sessionPath = this.account.sessionPath || this.getSessionPath();
-    
-    // 确保是绝对路径
-    if (!path.isAbsolute(sessionPath)) {
-      sessionPath = path.resolve(process.cwd(), sessionPath);
-    }
-    
-    const hasSession = fs.existsSync(sessionPath);
-
-    if (hasSession) {
-      this.log(`   ✅ 找到会话文件: ${sessionPath}`);
-      this.log(`   → 将使用已保存的登录状态`);
-    } else {
-      this.log(`   ℹ️  未找到会话文件: ${sessionPath}`);
-      this.log(`   → 需要手动登录`);
-    }
-
-    // 确保会话目录存在
-    const sessionDir = path.dirname(sessionPath);
-    fs.mkdirSync(sessionDir, { recursive: true });
-
-    // 启动浏览器（非无头模式，让用户看到并操作）
-    this.browser = await chromium.launch({
-      headless: false, // 必须显示浏览器让用户登录
-      slowMo: 50,
-    });
-
-    // 创建上下文
-    this.context = await this.browser.newContext({
-      storageState: hasSession ? sessionPath : undefined,
-      viewport: { width: 1280, height: 800 },
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    });
-
-    this.page = await this.context.newPage();
-
-    // 导航到 Telegram Web
-    this.log(`📱 打开 Telegram Web...`);
-    await this.page.goto(TELEGRAM_WEB_URL, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 60000 
-    });
-
-    await this.updateStatus('authenticating');
-    
-    // 启动后台登录监测任务
-    this.startLoginMonitoring(sessionPath, hasSession);
   }
 
   /**

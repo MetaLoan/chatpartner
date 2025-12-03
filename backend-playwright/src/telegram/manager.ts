@@ -75,11 +75,15 @@ export class TelegramManager {
 
     const client = new TelegramClient(account, this.prisma);
     this.clients.set(accountId, client);
+    console.log(`   ✅ 客户端实例已创建并添加到管理器 (当前客户端数: ${this.clients.size})`);
 
     // 异步启动客户端
-    client.start().catch((error) => {
+    client.start().then(() => {
+      console.log(`   ✅ 客户端 ${accountId} 启动成功`);
+    }).catch((error) => {
       console.error(`❌ 客户端 ${accountId} 启动失败:`, error);
       this.clients.delete(accountId);
+      console.log(`   ⚠️ 已从管理器移除失败的客户端 (当前客户端数: ${this.clients.size})`);
     });
 
     return client;
