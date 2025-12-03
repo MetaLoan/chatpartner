@@ -186,9 +186,10 @@ Write-Host "   ✅ 前端依赖安装完成" -ForegroundColor Green
 # ============================================
 Write-Host "📝 创建启动脚本..." -ForegroundColor Yellow
 
-# 启动脚本
+# 启动脚本（旧版本，将被下面的新版本替换）
 $startScript = @"
 @echo off
+chcp 65001 >nul
 title ChatPartner v2.0
 cd /d "$projectDir"
 
@@ -220,17 +221,18 @@ echo   后端: http://localhost:8080
 echo.
 pause
 "@
-$startScript | Out-File -FilePath "$INSTALL_DIR\启动ChatPartner.bat" -Encoding ASCII
+$startScript | Out-File -FilePath "$INSTALL_DIR\启动ChatPartner.bat" -Encoding UTF8
 
 # 停止脚本
 $stopScript = @"
 @echo off
+chcp 65001 >nul
 echo 正在停止 ChatPartner 服务...
 taskkill /f /im node.exe 2>nul
 echo ✅ 服务已停止
 pause
 "@
-$stopScript | Out-File -FilePath "$INSTALL_DIR\停止ChatPartner.bat" -Encoding ASCII
+$stopScript | Out-File -FilePath "$INSTALL_DIR\停止ChatPartner.bat" -Encoding UTF8
 
 # 保存登录状态脚本
 $saveSessionScript = @"
@@ -323,7 +325,7 @@ if %BACKUP_COUNT% gtr 0 (
 echo.
 pause
 "@
-$saveSessionScript | Out-File -FilePath "$INSTALL_DIR\保存登录状态.bat" -Encoding ASCII
+$saveSessionScript | Out-File -FilePath "$INSTALL_DIR\保存登录状态.bat" -Encoding UTF8
 
 # 恢复登录状态脚本
 $restoreSessionScript = @"
@@ -403,11 +405,12 @@ if %RESTORE_COUNT% gtr 0 (
 echo.
 pause
 "@
-$restoreSessionScript | Out-File -FilePath "$INSTALL_DIR\恢复登录状态.bat" -Encoding ASCII
+$restoreSessionScript | Out-File -FilePath "$INSTALL_DIR\恢复登录状态.bat" -Encoding UTF8
 
 # 更新启动脚本，在启动前自动恢复登录状态
 $startScript = @"
 @echo off
+chcp 65001 >nul
 title ChatPartner v2.0
 cd /d "$projectDir"
 
@@ -445,7 +448,7 @@ echo   💡 提示: 使用"保存登录状态.bat"可以备份所有登录状态
 echo.
 pause
 "@
-$startScript | Out-File -FilePath "$INSTALL_DIR\启动ChatPartner.bat" -Encoding ASCII
+$startScript | Out-File -FilePath "$INSTALL_DIR\启动ChatPartner.bat" -Encoding UTF8
 
 Write-Host "   ✅ 启动脚本创建完成" -ForegroundColor Green
 
