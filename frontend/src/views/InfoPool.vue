@@ -172,7 +172,8 @@
             <el-option label="晒单图" value="contract_image" />
           </el-select>
         </el-form-item>
-        <el-form-item label="RSS地址" v-if="sourceForm.type === 'rss'">
+        <el-form-item v-if="sourceForm.type === 'rss'">
+          <template #label>RSS地址</template>
           <el-input v-model="sourceForm.rss_url" placeholder="https://example.com/rss.xml" />
         </el-form-item>
         
@@ -195,15 +196,18 @@
           创建信息源后，需要在信息源列表中点击"添加币种"按钮来添加要监控的币种
         </el-alert>
         
-        <el-form-item label="API接口地址" v-if="sourceForm.type === 'contract_image'" required>
+        <el-form-item v-if="sourceForm.type === 'contract_image'" required>
+          <template #label>API接口地址</template>
           <el-input v-model="sourceForm.api_url" placeholder="http://localhost:3000/api/generate" />
           <div class="form-tip">晒单图生成API的完整地址</div>
         </el-form-item>
-        <el-form-item label="交易对" v-if="sourceForm.type === 'contract_image'" required>
+        <el-form-item v-if="sourceForm.type === 'contract_image'" required>
+          <template #label>交易对</template>
           <el-input v-model="sourceForm.tradepair" placeholder="ETHUSDT 或 BTCUSDT" />
           <div class="form-tip">需要与API底图文件对应的交易对</div>
         </el-form-item>
-        <el-form-item label="杠杆倍数" v-if="sourceForm.type === 'contract_image'" required>
+        <el-form-item v-if="sourceForm.type === 'contract_image'" required>
+          <template #label>杠杆倍数</template>
           <el-checkbox-group v-model="sourceForm.leverage_options">
             <el-checkbox :label="50">50倍</el-checkbox>
             <el-checkbox :label="100">100倍</el-checkbox>
@@ -220,11 +224,13 @@
             测试API
           </el-button>
         </el-form-item>
-        <el-form-item label="开单时间范围" v-if="sourceForm.type === 'contract_image'">
+        <el-form-item v-if="sourceForm.type === 'contract_image'">
+          <template #label>开单时间范围</template>
           <el-input-number v-model="sourceForm.open_time_range_hours" :min="1" :max="720" />
           <span style="margin-left: 10px;">小时（最近xx小时内的随机时间）</span>
         </el-form-item>
-        <el-form-item label="自动清理时间" v-if="sourceForm.type === 'contract_image'">
+        <el-form-item v-if="sourceForm.type === 'contract_image'">
+          <template #label>自动清理时间</template>
           <el-input-number v-model="sourceForm.cleanup_hours" :min="0" :max="720" />
           <span style="margin-left: 10px;">小时（超过xx小时的数据自动删除，0表示不清理）</span>
         </el-form-item>
@@ -242,7 +248,8 @@
           <el-switch v-model="sourceForm.allow_same_account_reuse" />
           <div class="form-tip">开启后，同一账号可反复使用同一条内容（无限循环）</div>
         </el-form-item>
-        <el-form-item label="拉取间隔" v-if="['rss', 'btc_price', 'eth_price', 'contract_image'].includes(sourceForm.type)">
+        <el-form-item v-if="['rss', 'btc_price', 'eth_price', 'contract_image'].includes(sourceForm.type)">
+          <template #label>拉取间隔</template>
           <el-input-number v-model="sourceForm.fetch_interval" :min="20" :max="86400" />
           <span style="margin-left: 10px;">秒（建议20-50秒）</span>
         </el-form-item>
@@ -308,7 +315,8 @@
             <el-radio value="custom">输入自定义币种</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="选择币种" v-if="cryptoForm.addMode === 'select'">
+        <el-form-item v-if="cryptoForm.addMode === 'select'">
+          <template #label>选择币种</template>
           <el-select 
             v-model="cryptoForm.symbols" 
             multiple 
@@ -360,7 +368,8 @@
             </el-option-group>
           </el-select>
         </el-form-item>
-        <el-form-item label="自定义币种" v-if="cryptoForm.addMode === 'custom'">
+        <el-form-item v-if="cryptoForm.addMode === 'custom'">
+          <template #label>自定义币种</template>
           <el-input 
             v-model="cryptoForm.customSymbol" 
             placeholder="输入币种符号，如 PEPE（大写）"
