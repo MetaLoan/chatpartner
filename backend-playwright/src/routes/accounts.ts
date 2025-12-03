@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient, Account } from '@prisma/client';
 import { TelegramManager } from '../telegram/manager.js';
+import fs from 'fs';
+import path from 'path';
 
 export const accountRoutes = Router();
 
@@ -88,6 +90,170 @@ accountRoutes.get('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('获取账号列表失败:', error);
     res.status(500).json({ error: '查询失败' });
+  }
+});
+
+// 保存所有登录状态（必须在 /:id 路由之前定义）
+accountRoutes.post('/save-sessions', async (req: Request, res: Response) => {
+  const prisma: PrismaClient = req.app.get('prisma');
+  
+  try {
+    const SESSION_DIR = process.env.SESSION_DIR || path.join(process.cwd(), 'data', 'sessions');
+    
+    // 确保登录目录存在
+    if (!fs.existsSync(SESSION_DIR)) {
+      fs.mkdirSync(SESSION_DIR, { recursive: true });
+    }
+    
+    // 获取所有账号
+    const accounts = await prisma.account.findMany({
+      select: {
+        id: true,
+        phoneNumber: true,
+        sessionPath: true
+      }
+    });
+    
+    const results: Array<{
+      accountId: number;
+      phoneNumber: string;
+      success: boolean;
+      message: string;
+      sessionPath?: string;
+    }> = [];
+    
+    let totalBackedUp = 0;
+    let totalSkipped = 0;
+    let totalFailed = 0;
+    
+    for (const account of accounts) {
+      // 获取session文件路径
+      let sessionPath: string;
+      if (account.sessionPath) {
+        sessionPath = account.sessionPath;
+        if (!path.isAbsolute(sessionPath)) {
+          sessionPath = path.resolve(process.cwd(), sessionPath);
+        }
+      } else {
+        // 使用默认路径
+        const phoneNumberClean = account.phoneNumber.replace(/\+/g, '');
+        sessionPath = path.join(SESSION_DIR, `${phoneNumberClean}.json`);
+      }
+      
+      // 检查session文件是否存在且有效
+      if (!fs.existsSync(sessionPath)) {
+        results.push({
+          accountId: account.id,
+          phoneNumber: account.phoneNumber,
+          success: false,
+          message: 'Session file not found',
+          sessionPath
+        });
+        totalSkipped++;
+        continue;
+      }
+      
+      // 检查文件大小
+      const stats = fs.statSync(sessionPath);
+      if (stats.size === 0) {
+        results.push({
+          accountId: account.id,
+          phoneNumber: account.phoneNumber,
+          success: false,
+          message: 'Session file is empty',
+          sessionPath
+        });
+        totalSkipped++;
+        continue;
+      }
+      
+      // 尝试解析JSON验证文件有效性
+      try {
+        const content = fs.readFileSync(sessionPath, 'utf-8');
+        JSON.parse(content); // 验证JSON格式
+      } catch (parseError) {
+        results.push({
+          accountId: account.id,
+          phoneNumber: account.phoneNumber,
+          success: false,
+          message: 'Session file is invalid JSON',
+          sessionPath
+        });
+        totalSkipped++;
+        continue;
+      }
+      
+      // 保存session文件到登录目录（如果session文件不在登录目录，则复制过去）
+      try {
+        const phoneNumberClean = account.phoneNumber.replace(/\+/g, '');
+        const targetPath = path.join(SESSION_DIR, `${phoneNumberClean}.json`);
+        
+        // 如果session文件已经在登录目录，跳过
+        if (sessionPath === targetPath) {
+          results.push({
+            accountId: account.id,
+            phoneNumber: account.phoneNumber,
+            success: true,
+            message: 'Already in sessions directory',
+            sessionPath
+          });
+          totalBackedUp++;
+          continue;
+        }
+        
+        // 如果目标文件已存在，先删除
+        if (fs.existsSync(targetPath)) {
+          fs.unlinkSync(targetPath);
+        }
+        
+        // 复制文件到登录目录
+        fs.copyFileSync(sessionPath, targetPath);
+        
+        // 更新数据库中的sessionPath
+        await prisma.account.update({
+          where: { id: account.id },
+          data: { sessionPath: targetPath }
+        });
+        
+        results.push({
+          accountId: account.id,
+          phoneNumber: account.phoneNumber,
+          success: true,
+          message: 'Saved to sessions directory successfully',
+          sessionPath: targetPath
+        });
+        totalBackedUp++;
+      } catch (saveError: any) {
+        results.push({
+          accountId: account.id,
+          phoneNumber: account.phoneNumber,
+          success: false,
+          message: `Save failed: ${saveError.message}`,
+          sessionPath
+        });
+        totalFailed++;
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Save completed: ${totalBackedUp} saved, ${totalSkipped} skipped, ${totalFailed} failed`,
+      summary: {
+        total: accounts.length,
+        saved: totalBackedUp,
+        skipped: totalSkipped,
+        failed: totalFailed
+      },
+      results,
+      sessionsDir: SESSION_DIR
+    });
+  } catch (error: any) {
+    console.error('保存登录状态失败:', error);
+    res.status(500).json({ 
+      success: false,
+      error: '保存失败',
+      message: error.message 
+    });
   }
 });
 

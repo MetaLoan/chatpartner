@@ -4,7 +4,13 @@
       <template #header>
         <div class="card-header">
           <span>账号管理 <el-tag size="small" type="success">Playwright 版</el-tag></span>
-          <el-button type="primary" @click="handleAdd">添加账号</el-button>
+          <div>
+            <el-button type="success" @click="handleSaveSessions" :loading="savingSessions" style="margin-right: 10px">
+              <el-icon><DocumentCopy /></el-icon>
+              保存所有登录状态
+            </el-button>
+            <el-button type="primary" @click="handleAdd">添加账号</el-button>
+          </div>
         </div>
       </template>
 
@@ -323,20 +329,76 @@
         <el-button @click="loadTemplateVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 保存登录状态结果对话框 -->
+    <el-dialog
+      v-model="saveSessionsResultVisible"
+      title="保存登录状态结果"
+      width="700px"
+    >
+      <div v-if="saveSessionsResult">
+        <el-alert
+          :type="saveSessionsResult.success ? 'success' : 'warning'"
+          :title="saveSessionsResult.message"
+          :closable="false"
+          style="margin-bottom: 20px"
+        />
+        
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="总账号数">{{ saveSessionsResult.summary?.total || 0 }}</el-descriptions-item>
+          <el-descriptions-item label="成功保存">
+            <el-tag type="success">{{ saveSessionsResult.summary?.saved || 0 }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="跳过">
+            <el-tag type="info">{{ saveSessionsResult.summary?.skipped || 0 }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="失败">
+            <el-tag type="danger">{{ saveSessionsResult.summary?.failed || 0 }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="保存位置" :span="2">
+            <code style="font-size: 12px">{{ saveSessionsResult.sessionsDir }}</code>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-divider content-position="left">详细结果</el-divider>
+        <el-scrollbar height="300px" style="border: 1px solid #e4e7ed; border-radius: 4px; padding: 10px;">
+          <div v-for="(result, index) in saveSessionsResult.results" :key="index" style="margin-bottom: 10px; padding: 8px; background: #f5f7fa; border-radius: 4px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div>
+                <strong>{{ result.phoneNumber }}</strong>
+                <el-tag :type="result.success ? 'success' : 'danger'" size="small" style="margin-left: 10px">
+                  {{ result.success ? '成功' : '失败' }}
+                </el-tag>
+              </div>
+            </div>
+            <div style="margin-top: 5px; font-size: 12px; color: #909399;">
+              {{ result.message === 'Backed up successfully' ? '已保存到登录目录' : result.message === 'Already in sessions directory' ? '已在登录目录' : result.message }}
+            </div>
+            <div v-if="result.sessionPath" style="margin-top: 5px; font-size: 11px; color: #606266; word-break: break-all;">
+              <code>{{ result.sessionPath }}</code>
+            </div>
+          </div>
+        </el-scrollbar>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="saveSessionsResultVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, DocumentCopy } from '@element-plus/icons-vue'
 import {
   getAccounts,
   createAccount,
   updateAccount,
   deleteAccount,
   loginAccount,
-  logoutAccount
+  logoutAccount,
+  saveAllSessions
 } from '@/api/accounts'
 import {
   getTemplates,
@@ -361,6 +423,11 @@ const saveTemplateVisible = ref(false)
 const loadTemplateVisible = ref(false)
 const templateName = ref('')
 const templateDesc = ref('')
+
+// 保存登录状态相关
+const savingSessions = ref(false)
+const saveSessionsResultVisible = ref(false)
+const saveSessionsResult = ref(null)
 
 const pagination = reactive({
   page: 1,
@@ -669,6 +736,27 @@ const handleDeleteTemplate = async (template) => {
       console.error('删除模板失败:', error)
       ElMessage.error('删除模板失败')
     }
+  }
+}
+
+const handleSaveSessions = async () => {
+  savingSessions.value = true
+  try {
+    const response = await saveAllSessions()
+    // Axios拦截器已经返回了response.data，所以response就是数据本身
+    saveSessionsResult.value = response
+    saveSessionsResultVisible.value = true
+    
+    if (response.success) {
+      ElMessage.success(response.message)
+    } else {
+      ElMessage.warning(response.message || '保存完成，但部分账号未备份')
+    }
+  } catch (error) {
+    console.error('保存登录状态失败:', error)
+    ElMessage.error(error.response?.data?.error || error.message || '保存登录状态失败')
+  } finally {
+    savingSessions.value = false
   }
 }
 

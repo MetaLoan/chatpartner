@@ -35,3 +35,8 @@ export const logoutAccount = (id) => {
   return api.post(`/accounts/${id}/logout`)
 }
 
+// 保存所有登录状态
+export const saveAllSessions = () => {
+  return api.post('/accounts/save-sessions')
+}
+
