@@ -212,17 +212,8 @@ export class ProactiveScheduler {
           await fns.sendImage(imageBase64, undefined);
         } else {
           // 图片+AI生成评论（包含标题内容）
-          // 优先使用群组语言对应的提示词，除非账号有自定义的
-          const defaultProactivePrompt = getProactivePrompt(groupLanguage);
-          const defaultImagePrompt = getImageCommentPrompt(groupLanguage);
-          
-          let prompt = defaultImagePrompt;
-          if (account.proactivePrompt && 
-              account.proactivePrompt.trim() !== '' && 
-              account.proactivePrompt !== getProactivePrompt('zh-CN')) {
-            // 账号有真正的自定义提示词
-            prompt = account.proactivePrompt;
-          }
+          // 使用群组语言对应的图片评论提示词
+          const prompt = account.proactivePrompt || getImageCommentPrompt(groupLanguage);
           
           // 构建包含标题的提示词
           let fullPrompt = prompt;
@@ -276,16 +267,8 @@ export class ProactiveScheduler {
           }
         } else {
           // 输出观点（需要AI处理）
-          // 优先使用群组语言对应的提示词，除非账号有自定义的
-          const defaultTextPrompt = getTextCommentPrompt(groupLanguage);
-          
-          let prompt = defaultTextPrompt;
-          if (account.proactivePrompt && 
-              account.proactivePrompt.trim() !== '' && 
-              account.proactivePrompt !== getProactivePrompt('zh-CN')) {
-            // 账号有真正的自定义提示词
-            prompt = account.proactivePrompt;
-          }
+          // 使用群组语言对应的文本评论提示词
+          const prompt = account.proactivePrompt || getTextCommentPrompt(groupLanguage);
           
           const contentForAI = `
 标题: ${item.title || '无'}

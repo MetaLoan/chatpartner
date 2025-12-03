@@ -628,6 +628,14 @@ export class TelegramClient {
       });
       const groupLanguage = (targetGroup?.language || 'zh-CN') as 'zh-CN' | 'en-US';
       
+      // 调试日志：输出群组语言和账号提示词
+      this.log(`🌐 群组语言: ${groupLanguage}`);
+      if (this.account.systemPrompt) {
+        this.log(`📝 账号自定义提示词: ${this.account.systemPrompt.substring(0, 80)}${this.account.systemPrompt.length > 80 ? '...' : ''}`);
+      } else {
+        this.log(`📝 账号提示词为空，将使用群组语言默认提示词`);
+      }
+      
       const reply = await this.aiService.generateReply(
         this.account.aiApiKey,
         this.account.aiModel,
