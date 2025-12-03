@@ -561,12 +561,12 @@ const handleEdit = (row) => {
 // 切换自动回复
 const handleToggleAutoReply = async (row) => {
   try {
-    await api.put(`/accounts/${row.id}`, { auto_reply: row.auto_reply })
+    await updateAccount(row.id, { auto_reply: row.auto_reply })
     ElMessage.success(row.auto_reply ? '已开启自动回复' : '已关闭自动回复')
   } catch (error) {
-    console.error('切换失败:', error)
+    console.error('切换自动回复失败:', error)
     row.auto_reply = !row.auto_reply // 恢复原状态
-    ElMessage.error('操作失败')
+    ElMessage.error('切换失败: ' + (error.response?.data?.error || error.message))
   }
 }
 
