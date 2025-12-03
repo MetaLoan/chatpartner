@@ -11,20 +11,27 @@ import { getBinanceSymbol } from '../config/crypto-symbols.js';
  */
 export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promise<void> {
   try {
-    if (!source.symbols) {
-      console.log(`[${source.name}] 未配置币种列表，跳过`);
-      return;
-    }
-
-    const symbols: string[] = JSON.parse(source.symbols);
     const historySize = source.historySize || 5;
     const historyInterval = source.historyInterval || 30; // 分钟
 
-    console.log(`[${source.name}] 开始拉取 ${symbols.length} 个币种的价格`);
+    // 获取该信息源下所有的币种（从 InfoItem 中获取）
+    const cryptoItems = await prisma.infoItem.findMany({
+      where: {
+        sourceId: source.id,
+        contentType: 'price',
+        symbol: { not: null }
+      }
+    });
 
-    for (const symbol of symbols) {
-      // 确保 symbol 是字符串
-      const symbolStr = typeof symbol === 'string' ? symbol : String(symbol);
+    if (cryptoItems.length === 0) {
+      console.log(`[${source.name}] 没有添加任何币种，跳过`);
+      return;
+    }
+
+    console.log(`[${source.name}] 开始拉取 ${cryptoItems.length} 个币种的价格`);
+
+    for (const item of cryptoItems) {
+      const symbolStr = item.symbol!;
       
       const binanceSymbol = getBinanceSymbol(symbolStr);
       if (!binanceSymbol) {
@@ -154,36 +161,16 @@ export async function fetchCryptoPrice(prisma: PrismaClient, source: any): Promi
 
         const title = `${symbolStr} ${change24h >= 0 ? '📈' : '📉'} $${price.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`;
 
-        // 创建或更新 InfoItem（每次都更新当前价格，即使不记录历史）
-        const existing = await prisma.infoItem.findFirst({
-          where: {
-            sourceId: source.id,
-            title: { contains: symbolStr }
+        // 更新对应的 InfoItem
+        await prisma.infoItem.update({
+          where: { id: item.id },
+          data: {
+            title,
+            content,
+            priceValue: price,
+            priceChange: change24h
           }
         });
-
-        if (existing) {
-          await prisma.infoItem.update({
-            where: { id: existing.id },
-            data: {
-              title,
-              content,
-              priceValue: price,
-              priceChange: change24h
-            }
-          });
-        } else {
-          await prisma.infoItem.create({
-            data: {
-              sourceId: source.id,
-              contentType: 'price',
-              title,
-              content,
-              priceValue: price,
-              priceChange: change24h
-            }
-          });
-        }
 
         console.log(`[${source.name}] ${symbolStr}: $${price.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`);
 

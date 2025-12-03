@@ -146,7 +146,7 @@ model InfoSource {
   priceApiUrl String?  // 价格API地址
   
   // 实时币价专用配置（新）
-  symbols     String?  // 币种列表，JSON数组格式，如 ["BTC", "ETH", "SOL"]
+  // symbols 字段已废弃，改为在 InfoItem 中单独存储每个币种
   historySize Int?     @default(5) // 保留历史价格条数
   historyInterval Int? @default(30) // 历史价格记录间隔（分钟）
   
@@ -219,7 +219,10 @@ model InfoItem {
   
   // 价格数据（如果是价格类型）
   priceValue  Float?
-  priceChange Float?   // 24h涨跌幅
+  priceChange Float?
+  
+  // 币种符号（crypto_price 类型专用，如 BTC, ETH）
+  symbol      String?   // 24h涨跌幅
   
   // 外部唯一标识（用于RSS去重）
   externalId  String?

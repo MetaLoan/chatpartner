@@ -91,7 +91,7 @@ router.post('/sources', async (req: Request, res: Response) => {
   try {
     const { 
       type, name, rss_url, price_api_url, api_url, tradepair, leverage_options,
-      open_time_range_hours, cleanup_hours, fetch_interval, symbols, history_size, history_interval,
+      open_time_range_hours, cleanup_hours, fetch_interval, history_size, history_interval,
       work_mode, reusable, allow_same_account_reuse, expire_hours, enabled 
     } = req.body;
     
@@ -106,13 +106,6 @@ router.post('/sources', async (req: Request, res: Response) => {
       }
     }
     
-    // 验证实时币价类型必填字段
-    if (type === 'crypto_price') {
-      if (!symbols || (Array.isArray(symbols) && symbols.length === 0)) {
-        return res.status(400).json({ error: '实时币价类型需要至少选择一个币种' });
-      }
-    }
-    
     // 处理杠杆选项（如果是数组，转换为JSON字符串）
     let leverageOptionsStr: string | null = null;
     if (leverage_options) {
@@ -120,16 +113,6 @@ router.post('/sources', async (req: Request, res: Response) => {
         leverageOptionsStr = JSON.stringify(leverage_options);
       } else if (typeof leverage_options === 'string') {
         leverageOptionsStr = leverage_options;
-      }
-    }
-    
-    // 处理币种列表（如果是数组，转换为JSON字符串）
-    let symbolsStr: string | null = null;
-    if (symbols) {
-      if (Array.isArray(symbols)) {
-        symbolsStr = JSON.stringify(symbols);
-      } else if (typeof symbols === 'string') {
-        symbolsStr = symbols;
       }
     }
     
@@ -144,7 +127,6 @@ router.post('/sources', async (req: Request, res: Response) => {
         leverageOptions: leverageOptionsStr,
         openTimeRangeHours: open_time_range_hours,
         cleanupHours: cleanup_hours,
-        symbols: symbolsStr,
         historySize: history_size || 5,
         historyInterval: history_interval || 30,
         fetchInterval: fetch_interval || (type === 'crypto_price' ? 60 : 300),
@@ -425,6 +407,127 @@ router.post('/items/text/batch', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('批量添加文字内容失败:', error);
     res.status(500).json({ error: '批量添加文字内容失败' });
+  }
+});
+
+// 添加币种到实时币价信息源
+router.post('/items/crypto', async (req: Request, res: Response) => {
+  const prisma = req.app.get('prisma') as PrismaClient;
+  
+  try {
+    const { source_id, symbol } = req.body;
+    
+    if (!source_id || !symbol) {
+      return res.status(400).json({ error: '缺少必填字段' });
+    }
+    
+    // 验证信息源类型
+    const source = await prisma.infoSource.findUnique({
+      where: { id: source_id }
+    });
+    
+    if (!source || source.type !== 'crypto_price') {
+      return res.status(400).json({ error: '信息源类型不匹配' });
+    }
+    
+    // 检查币种是否已存在
+    const existing = await prisma.infoItem.findFirst({
+      where: {
+        sourceId: source_id,
+        symbol: symbol
+      }
+    });
+    
+    if (existing) {
+      return res.status(400).json({ error: '该币种已存在' });
+    }
+    
+    // 创建币种条目（初始数据为空，等待拉取）
+    const item = await prisma.infoItem.create({
+      data: {
+        sourceId: source_id,
+        contentType: 'price',
+        symbol: symbol,
+        title: `${symbol} 价格加载中...`,
+        content: '等待首次价格更新',
+        publishedAt: new Date()
+      }
+    });
+    
+    res.json({ message: '添加成功', data: item });
+  } catch (error) {
+    console.error('添加币种失败:', error);
+    res.status(500).json({ error: '添加币种失败' });
+  }
+});
+
+// 批量添加币种到实时币价信息源
+router.post('/items/crypto/batch', async (req: Request, res: Response) => {
+  const prisma = req.app.get('prisma') as PrismaClient;
+  
+  try {
+    const { source_id, symbols } = req.body;
+    
+    if (!source_id || !symbols || !Array.isArray(symbols) || symbols.length === 0) {
+      return res.status(400).json({ error: '缺少必填字段或格式错误' });
+    }
+    
+    // 验证信息源类型
+    const source = await prisma.infoSource.findUnique({
+      where: { id: source_id }
+    });
+    
+    if (!source || source.type !== 'crypto_price') {
+      return res.status(400).json({ error: '信息源类型不匹配' });
+    }
+    
+    let successCount = 0;
+    let skipCount = 0;
+    let failCount = 0;
+    
+    for (const symbol of symbols) {
+      try {
+        // 检查币种是否已存在
+        const existing = await prisma.infoItem.findFirst({
+          where: {
+            sourceId: source_id,
+            symbol: symbol
+          }
+        });
+        
+        if (existing) {
+          skipCount++;
+          continue;
+        }
+        
+        // 创建币种条目
+        await prisma.infoItem.create({
+          data: {
+            sourceId: source_id,
+            contentType: 'price',
+            symbol: symbol,
+            title: `${symbol} 价格加载中...`,
+            content: '等待首次价格更新',
+            publishedAt: new Date()
+          }
+        });
+        
+        successCount++;
+      } catch (err) {
+        failCount++;
+        console.error(`添加币种 ${symbol} 失败:`, err);
+      }
+    }
+    
+    res.json({ 
+      message: `批量添加完成`,
+      success: successCount,
+      skipped: skipCount,
+      failed: failCount 
+    });
+  } catch (error) {
+    console.error('批量添加币种失败:', error);
+    res.status(500).json({ error: '批量添加币种失败' });
   }
 });
 
