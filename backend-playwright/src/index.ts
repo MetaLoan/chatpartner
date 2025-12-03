@@ -106,8 +106,9 @@ server.listen(PORT, () => {
   console.log(`🚀 服务器已启动: http://localhost:${PORT}`);
   console.log('📡 WebSocket 服务已就绪');
   
-  // 不自动启动客户端，等待用户从管理后台手动启动
-  console.log('📋 Telegram客户端管理器已就绪（未自动启动客户端，等待用户手动操作）');
+  // 启动所有已启用的账号
+  console.log('🚀 自动启动所有已启用账号...');
+  telegramManager.startAll().catch(console.error);
   
   // 启动信息池服务
   infoPoolService.startAll().catch(console.error);
