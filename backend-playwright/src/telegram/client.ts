@@ -539,10 +539,20 @@ export class TelegramClient {
     const messages = await this.readMessages();
     if (messages.length === 0) return;
 
+    // 临时调试：输出所有消息的 fromSelf 状态
+    if (messages.length > 0) {
+      this.log(`📋 读取到 ${messages.length} 条消息:`);
+      messages.forEach((msg, idx) => {
+        const preview = msg.text.substring(0, 30) + (msg.text.length > 30 ? '...' : '');
+        this.log(`   [${idx + 1}] ${msg.fromSelf ? '🟢 自己' : '🔵 他人'}: "${preview}"`);
+      });
+    }
+
     // 找到最新的非自身消息用于触发逻辑
     const latestIncoming = [...messages].reverse().find(msg => !msg.fromSelf);
     if (!latestIncoming) {
       // 只有自己刚发的消息，暂不处理
+      this.log(`⚠️ 没有检测到非自身消息，跳过回复（共${messages.length}条消息）`);
       return;
     }
 
@@ -707,27 +717,57 @@ export class TelegramClient {
       const recentMessages = messageElements.slice(-this.account.bufferSize * 2);
 
       for (const el of recentMessages) {
-        // 跳过自己发的消息（兼容多种样式）
-        const isOutgoing = await el.evaluate((e: Element) => {
+        // 增强检测自己发的消息（兼容多种样式）
+        const selfCheckResult = await el.evaluate((e: Element) => {
           const classes = Array.from(e.classList || []);
           const outgoingClasses = ['is-out', 'own', 'message-out', 'outgoing', 'is-me'];
-          if (classes.some(cls => outgoingClasses.includes(cls))) return true;
           
+          // 检查类名
+          const hasOutgoingClass = classes.some(cls => outgoingClasses.includes(cls));
+          if (hasOutgoingClass) return { isOutgoing: true, reason: 'class: ' + classes.join(',') };
+          
+          // 检查 data-out 属性
           const attrOut = e.getAttribute('data-out');
-          if (attrOut === 'true') return true;
+          if (attrOut === 'true' || attrOut === '1') return { isOutgoing: true, reason: 'data-out' };
           
+          // 检查 data-peer 属性
           const peer = e.getAttribute('data-peer') || '';
-          if (peer.toLowerCase().includes('me')) return true;
+          if (peer.toLowerCase().includes('me')) return { isOutgoing: true, reason: 'data-peer: ' + peer };
           
+          // 检查头像
           const hasSelfAvatar = e.querySelector('[class*="avatar"][class*="own"], [class*="avatar"][class*="self"], [class*="avatar"][class*="me"]');
-          if (hasSelfAvatar) return true;
+          if (hasSelfAvatar) return { isOutgoing: true, reason: 'avatar' };
           
+          // 检查 role 属性
           const role = e.getAttribute('role') || '';
-          if (role.toLowerCase().includes('outgoing')) return true;
+          if (role.toLowerCase().includes('outgoing')) return { isOutgoing: true, reason: 'role: ' + role };
           
-          return false;
+          // 检查父元素是否有 .own-message 等类名
+          const parent = e.parentElement;
+          if (parent) {
+            const parentClasses = Array.from(parent.classList || []);
+            if (parentClasses.some(cls => ['own', 'is-out', 'outgoing'].includes(cls))) {
+              return { isOutgoing: true, reason: 'parent class: ' + parentClasses.join(',') };
+            }
+          }
+          
+          // 检查是否在右侧（发送的消息通常在右侧）
+          const style = window.getComputedStyle(e);
+          const marginLeft = parseFloat(style.marginLeft || '0');
+          const marginRight = parseFloat(style.marginRight || '0');
+          if (marginLeft > marginRight + 50) {
+            return { isOutgoing: true, reason: 'margin-left > margin-right (right-aligned)' };
+          }
+          
+          return { isOutgoing: false, reason: 'no match' };
         });
-        const fromSelf = isOutgoing;
+        
+        const fromSelf = selfCheckResult.isOutgoing;
+        
+        // 如果启用了调试，输出检测结果
+        if (fromSelf) {
+          // this.log(`   🔍 检测到自己的消息 (${selfCheckResult.reason})`);
+        }
 
         // 先检查是否有图片元素（仅在启用图片识别时输出调试信息）
         const shouldLogImageDebug = !!this.account.enableImageRecognition;
@@ -792,6 +832,20 @@ export class TelegramClient {
         // 如果没有文字内容，仅包含图片，则直接忽略（避免对纯图片进行AI回复）
         if (!hasText && images.length === 0) {
           continue;
+        }
+        
+        // 二次检查：如果检测不到 fromSelf，但内容与最近发送的消息完全一致，标记为 fromSelf
+        if (!fromSelf && this.lastSentMessages.length > 0) {
+          const normalizedText = cleanedText.trim().toLowerCase();
+          const isRecentlySent = this.lastSentMessages.some(sent => {
+            const normalizedSent = sent.trim().toLowerCase();
+            return normalizedSent === normalizedText;
+          });
+          if (isRecentlySent) {
+            // this.log(`   🔍 二次检查：内容匹配最近发送，标记为 fromSelf`);
+            messages.push({ text: cleanedText, images, messageId, fromSelf: true });
+            continue;
+          }
         }
 
         // 纯图片消息：记录日志并跳过
