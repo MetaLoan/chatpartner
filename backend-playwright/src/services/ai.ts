@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { getSystemPrompt, type LanguageCode } from '../config/prompts';
 
 /**
  * 获取加密货币实时价格（使用 Binance API，免费且稳定）
@@ -30,13 +31,13 @@ async function fetchCryptoPrice(symbol: string): Promise<{
       { signal: AbortSignal.timeout(3000) } // 3秒超时
     );
     
-    const data = await response.json();
+    const data = await response.json() as { lastPrice?: string; priceChangePercent?: string };
     
     if (!data || !data.lastPrice) return null;
     
     return {
       price: parseFloat(data.lastPrice),
-      change24h: parseFloat(data.priceChangePercent) || 0
+      change24h: parseFloat(data.priceChangePercent || '0')
     };
   } catch (error) {
     // 静默失败，不影响主流程
@@ -109,7 +110,8 @@ export class AIService {
     systemPrompt: string,
     messages: Array<{ text: string; images?: string[]; fromSelf?: boolean }> | string,
     baseUrl?: string | null,
-    enableImages: boolean = false
+    enableImages: boolean = false,
+    groupLanguage: LanguageCode = 'zh-CN'
   ): Promise<string> {
     try {
       const openai = new OpenAI({
@@ -119,8 +121,11 @@ export class AIService {
 
       const apiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
-      if (systemPrompt) {
-        apiMessages.push({ role: 'system', content: systemPrompt });
+      // 如果账号没有自定义 systemPrompt，使用群组语言对应的默认提示词
+      const finalSystemPrompt = systemPrompt || getSystemPrompt(groupLanguage);
+      
+      if (finalSystemPrompt) {
+        apiMessages.push({ role: 'system', content: finalSystemPrompt });
       }
 
       // 处理消息格式

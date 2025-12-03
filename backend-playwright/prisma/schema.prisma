@@ -63,6 +63,7 @@ model Group {
   description String?
   memberCount Int      @default(0)
   isActive    Boolean  @default(true)
+  language    String   @default("zh-CN") // 群组语言设置（zh-CN, en-US 等）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

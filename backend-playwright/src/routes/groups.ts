@@ -14,6 +14,7 @@ function formatGroup(group: any) {
     description: group.description,
     member_count: group.memberCount,
     is_active: group.isActive,
+    language: group.language || 'zh-CN', // 群组语言设置
     status: group.isActive ? 'active' : 'inactive', // 兼容前端期望的 status 字段
     created_at: group.createdAt,
     updated_at: group.updatedAt,
@@ -107,7 +108,7 @@ groupRoutes.post('/', async (req: Request, res: Response) => {
   const prisma: PrismaClient = req.app.get('prisma');
   
   try {
-    const { telegram_id, chat_id, title, type, username } = req.body;
+    const { telegram_id, chat_id, title, type, username, language } = req.body;
     
     // 兼容 chat_id 和 telegram_id
     const groupId = telegram_id || chat_id?.toString();
@@ -119,7 +120,8 @@ groupRoutes.post('/', async (req: Request, res: Response) => {
     const group = await prisma.group.create({
       data: {
         telegramId: groupId,
-        name: title  // 数据库字段是 name
+        name: title,  // 数据库字段是 name
+        language: language || 'zh-CN'  // 默认中文
       }
     });
 
@@ -139,7 +141,7 @@ groupRoutes.put('/:id', async (req: Request, res: Response) => {
   
   try {
     const id = parseInt(req.params.id);
-    const { telegram_id, chat_id, title, status, description } = req.body;
+    const { telegram_id, chat_id, title, status, description, language } = req.body;
     
     // 兼容 chat_id 和 telegram_id
     const groupId = telegram_id || chat_id?.toString();
@@ -153,7 +155,8 @@ groupRoutes.put('/:id', async (req: Request, res: Response) => {
         ...(groupId && { telegramId: groupId }),
         ...(title && { name: title }),
         ...(description !== undefined && { description }),
-        ...(status !== undefined && { isActive })
+        ...(status !== undefined && { isActive }),
+        ...(language && { language })
       }
     });
 

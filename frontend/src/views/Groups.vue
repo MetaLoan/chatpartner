@@ -122,7 +122,13 @@
           </el-select>
         </el-form-item>
         <el-form-item label="语言" prop="language">
-          <el-input v-model="form.language" placeholder="如: zh-CN, en-US" />
+          <el-radio-group v-model="form.language">
+            <el-radio label="zh-CN">中文</el-radio>
+            <el-radio label="en-US">English</el-radio>
+          </el-radio-group>
+          <div style="color: #909399; font-size: 12px; margin-top: 5px;">
+            AI将使用对应语言的提示词进行回复和主动发言
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -194,7 +200,7 @@ const form = reactive({
   username: '',
   type: 'group',
   status: 'active',
-  language: ''
+  language: 'zh-CN'
 })
 
 const rules = {
@@ -251,6 +257,20 @@ const handleAdd = () => {
 
 const handleEdit = (row) => {
   dialogTitle.value = '编辑群组'
+  editingId = row.id
+  Object.assign(form, {
+    chat_id: Number(row.chat_id),
+    title: row.title || row.name,
+    username: row.username || '',
+    type: row.type || 'group',
+    status: row.status || 'active',
+    language: row.language || 'zh-CN'
+  })
+  dialogVisible.value = true
+}
+
+const handleEditOld = (row) => {
+  dialogTitle.value = '编辑群组（旧）'
   editingId = row.id
   Object.assign(form, {
     chat_id: Number(row.chat_id) || 0,  // 确保是数字类型

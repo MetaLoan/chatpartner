@@ -6,6 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import { InfoPoolService } from './info-pool.js';
 import { AIService } from './ai.js';
+import { getProactivePrompt, getImageCommentPrompt, getTextCommentPrompt, type LanguageCode } from '../config/prompts.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -143,12 +144,16 @@ export class ProactiveScheduler {
    */
   private async executeProactive(accountId: number): Promise<void> {
     const account = await this.prisma.account.findUnique({
-      where: { id: accountId }
+      where: { id: accountId },
+      include: { targetGroup: true }
     });
     
     if (!account || !account.enabled || !account.proactiveEnabled) {
       return;
     }
+    
+    // 获取群组语言设置
+    const groupLanguage = (account.targetGroup?.language || 'zh-CN') as LanguageCode;
     
     const fns = this.sendFunctions.get(accountId);
     if (!fns) {
@@ -207,7 +212,8 @@ export class ProactiveScheduler {
           await fns.sendImage(imageBase64, undefined);
         } else {
           // 图片+AI生成评论（包含标题内容）
-          const prompt = account.proactivePrompt || '你看到了一张图片，请用简短自然的方式发表你的看法。';
+          // 使用群组语言对应的图片评论提示词
+          const prompt = account.proactivePrompt || getImageCommentPrompt(groupLanguage);
           
           // 构建包含标题的提示词
           let fullPrompt = prompt;
@@ -226,7 +232,8 @@ export class ProactiveScheduler {
               image_url: { url: imageBase64 }
             }],
             account.aiApiBaseUrl || undefined,
-            false
+            false,
+            groupLanguage
           );
           
           if (reply) {
@@ -260,7 +267,8 @@ export class ProactiveScheduler {
           }
         } else {
           // 输出观点（需要AI处理）
-          const prompt = account.proactivePrompt || '你需要根据以下信息，用自然、口语化的方式发表你的看法或评论。';
+          // 使用群组语言对应的文本评论提示词
+          const prompt = account.proactivePrompt || getTextCommentPrompt(groupLanguage);
           
           const contentForAI = `
 标题: ${item.title || '无'}
@@ -278,7 +286,8 @@ ${item.sourceUrl ? `来源: ${item.sourceUrl}` : ''}
             prompt,
             [{ text: contentForAI }],
             account.aiApiBaseUrl || undefined,
-            false
+            false,
+            groupLanguage
           );
           
           messageToSend = reply || item.content || '';

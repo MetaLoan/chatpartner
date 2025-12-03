@@ -611,13 +611,21 @@ export class TelegramClient {
     }
     
     try {
+      // 获取目标群组的语言设置
+      const targetGroup = await this.prisma.group.findUnique({
+        where: { id: this.account.targetGroupId! },
+        select: { language: true }
+      });
+      const groupLanguage = (targetGroup?.language || 'zh-CN') as 'zh-CN' | 'en-US';
+      
       const reply = await this.aiService.generateReply(
         this.account.aiApiKey,
         this.account.aiModel,
         this.account.systemPrompt || '',
         contextMessages,
         this.account.aiApiBaseUrl,
-        shouldProcessImages
+        shouldProcessImages,
+        groupLanguage
       );
 
       if (reply) {
