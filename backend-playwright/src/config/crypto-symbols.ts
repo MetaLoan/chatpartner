@@ -78,3 +78,4 @@ export function getBinanceSymbol(symbol: string): string | undefined {
   return POPULAR_CRYPTO_SYMBOLS.find(s => s.symbol === symbol)?.binanceSymbol;
 }
 
+
